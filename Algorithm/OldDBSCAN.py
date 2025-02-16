@@ -7,7 +7,7 @@ def RangeQuery(DB, distFunc, Q, eps): #Where epsilon ε defines the minimum size
         
     return N
 
-def euclideanDistance(p1, p2):
+def euclidean_distance(p1, p2):
     return np.linalg.norm(p1 - p2)
 
 def DBSCAN(DB, distFunc, eps, minPts):
@@ -20,12 +20,12 @@ def DBSCAN(DB, distFunc, eps, minPts):
         #Obtain amount of points in euclidian distance (ε radius)
         N = RangeQuery(DB, distFunc, P, eps) 
 
-        if abs(N) < minPts:
+        if len(N) < minPts:
             labels[P] = -1 #Mark as noise (-1)
             continue
 
         C += 1 #Move onto next point in cluster for labeling
-        P = C  #Label initial cluster point  
+        labels[P] = C  #Label initial cluster point  
         S = set(N) - {P} #Set a new set for the cluster excluding initial point
 
         while S:
