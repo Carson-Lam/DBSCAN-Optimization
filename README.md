@@ -14,6 +14,15 @@ Our goal is to incorporate methodologies used in solving the ACM Maximum Range S
 ## Runtime
 Since each MaxRS process to find the densest area in a space runs in O(nlogn), the optimized DBSCAN algorithm should have **O(knlogn)** runtime, where k constitutes the amount of points in clusters.
 
+## Download and Run
+A trial set of data (visualized with matplotlib) has been provided as a testable implementation of DBScan. 
+
+1. Download the *algorithm* folder.
+
+2. The raw data can be plotted by running *testData.py*
+
+3. The cluster color coordinated data can be plotted by running *testScan.py*
+
 ## Project Dependencies
 
 - [numpy](https://numpy.org/)
