@@ -28,8 +28,8 @@ plt.show()
 ## DEBUG ##
 
 # Print the labels dictionary
-# print("Labels dictionary:")
-# print(labels)
+print("Labels dictionary:")
+print(labels)
 
 # Print the label values dictionary
 print("Label values:")
