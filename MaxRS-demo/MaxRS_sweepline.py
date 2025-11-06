@@ -5,7 +5,15 @@ import time
 def maxrs(points, rect_w, rect_h, step=1.0):
     """
     Original O(n³) version - checks ALL points for every (x,y) pair.
+
     Brute force grid scan, moves a rectangle of size (rect_w, rect_h) with step size 'step'
+
+    Args:
+        points: list of (x, y, weight)
+        rect_w, rect_h: rectangle width and height
+        Step: step size for grid scan
+    Returns:
+        (best_x, best_y, max_sum)
     """
     xs = [p[0] for p in points] # Array for X points
     ys = [p[1] for p in points] # Array for y points
@@ -15,8 +23,6 @@ def maxrs(points, rect_w, rect_h, step=1.0):
     
     best_sum = -np.inf
     best_pos = None
-
-    # grid scan
 
     # Slides grid using np.arange(min_x, max_x, step) with step size
     # Example: X jumps [min_x, min_x+step, min_x+(2*step), ...]
@@ -36,15 +42,20 @@ def maxrs(points, rect_w, rect_h, step=1.0):
 def maxrs_optimized(points, rect_w, rect_h):
     """
     Original O(n³) version - checks ALL points for every (x,y) pair.
+
     Slightly optimized grid scan, starts rectangle's left edge at sorted x's
+
+    Args:
+        points: list of (x, y, weight)
+        rect_w, rect_h: rectangle width and height
+    Returns:
+        (best_x, best_y, max_sum)
     """
     x_candidates = sorted(set([p[0] for p in points])) # sorted array for X points
     y_candidates = sorted(set([p[1] for p in points])) # Sorted array for Y points
     
     best_sum = -np.inf
     best_pos = None
-
-    # grid scan
 
     # Start left side of grid at x's
     # Example: X jumps [1,5, 6, 8, ...]
@@ -117,24 +128,32 @@ def maxrs_sweepline(points, rect_w, rect_h):
     return best_pos + (best_sum,)
 
 
-# Test data
-points = [
-    (2, 3, 5),
-    (5, 4, 3),
-    (3, 8, 4),
-    (6, 7, 3),
-    (7, 2, 2),
-    (9, 6, 4),
-    (3, 7, 5),
-    (1, 5, 2),
-    (6, 2, 8),
-    (4, 9, 3),
-    (8, 1, 6),
-    (2, 4, 1),
-    (7, 6, 7)
-]
+# Hardcoded Test data, n = 13
+# points = [
+#     (2, 3, 5),
+#     (5, 4, 3),
+#     (3, 8, 4),
+#     (6, 7, 3),
+#     (7, 2, 2),
+#     (9, 6, 4),
+#     (3, 7, 5),
+#     (1, 5, 2),
+#     (6, 2, 8),
+#     (4, 9, 3),
+#     (8, 1, 6),
+#     (2, 4, 1),
+#     (7, 6, 7)
+# ]
 
-rect_w, rect_h = 3, 3
+# Randomly generated Test data, n = 100
+# np.random.seed(42)
+# n = 100
+# points = [(np.random.uniform(0, 50), 
+#            np.random.uniform(0, 50), 
+#            np.random.randint(1, 10)) 
+#           for _ in range(n)]
+
+# rect_w, rect_h = 3, 3
 
 print("="*60)
 print("COMPARING BASIC vs OPTIMIZED VS SWEEP LINE")
