@@ -146,14 +146,14 @@ def maxrs_sweepline(points, rect_w, rect_h):
 # ]
 
 # Randomly generated Test data, n = 100
-# np.random.seed(42)
-# n = 100
-# points = [(np.random.uniform(0, 50), 
-#            np.random.uniform(0, 50), 
-#            np.random.randint(1, 10)) 
-#           for _ in range(n)]
+np.random.seed(42)
+n = 100
+points = [(np.random.uniform(0, 50), 
+           np.random.uniform(0, 50), 
+           np.random.randint(1, 10)) 
+          for _ in range(n)]
 
-# rect_w, rect_h = 3, 3
+rect_w, rect_h = 5, 5
 
 print("="*60)
 print("COMPARING BASIC vs OPTIMIZED VS SWEEP LINE")
@@ -194,19 +194,22 @@ for i, (x, y, w) in enumerate(points):
     ax.annotate(f'{w}', (x, y), xytext=(5, 5), textcoords='offset points',
                 fontsize=9, alpha=0.7, fontweight='bold')
 
-rect = plt.Rectangle((bx2, by2), rect_w, rect_h,
+# Show rectangles for both methods
+rect = plt.Rectangle((bx1, by1), rect_w, rect_h,
                      edgecolor='red', facecolor='red', 
-                     alpha=0.2, lw=3, label=f'Best rectangle (sum={bs2})')
+                     alpha=0.2, lw=3, label=f'Rectangle Op (sum={bs1})')
+ax.add_patch(rect)
+
+rect = plt.Rectangle((bx2, by2), rect_w, rect_h,
+                     edgecolor='blue', facecolor='blue', 
+                     alpha=0.2, lw=3, label=f'Rectangle sweep (sum={bs2})')
 ax.add_patch(rect)
 
 # Show candidate grid lines
-
-# 6/11/2025: Candidates line up w grid, so this is currently useless
-
-# for x in set(p[0] for p in points):
-#     ax.axvline(x, color='gray', alpha=0.15, linestyle='--', linewidth=0.5)
-# for y in set(p[1] for p in points):
-#     ax.axhline(y, color='gray', alpha=0.15, linestyle='--', linewidth=0.5)
+for x in set(p[0] for p in points):
+    ax.axvline(x, color='red', alpha=0.15, linestyle='--', linewidth=0.5)
+for y in set(p[1] for p in points):
+    ax.axhline(y, color='gray', alpha=0.15, linestyle='--', linewidth=0.5)
 
 ax.set_title(f"MaxRS Sweep Line Algorithm\n" + 
              f"Optimal position: ({bx2}, {by2}) | Total weight: {bs2}",
@@ -215,7 +218,7 @@ ax.set_title(f"MaxRS Sweep Line Algorithm\n" +
 ax.set_xlabel('X coordinate', fontsize=11)
 ax.set_ylabel('Y coordinate', fontsize=11)
 ax.legend(fontsize=10)
-ax.grid(True, alpha=0.3)
+ax.grid(True, alpha=0.5)
 
 plt.tight_layout()
 plt.show()
