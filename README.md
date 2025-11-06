@@ -2,7 +2,7 @@
 
 ## Overview
 
-In partnership with Andreas Zuefle [[1]](https://www.zuefle.org/spatial-clustering), this repository is an implementation for a proposed optimization of the largely popular DBSCAN [[2]](https://dl.acm.org/doi/abs/10.5555/3001460.3001507). This optimization aims to improve the time complexity of DBSCAN (which runs in O(n^2) time without index support and O(n log n) with indexing) by incorporating result-sensitivity.
+In partnership with Andreas Züfle [[1]](https://www.zuefle.org/spatial-clustering), this repository is an implementation for a proposed optimization of the largely popular DBSCAN [[2]](https://dl.acm.org/doi/abs/10.5555/3001460.3001507). This optimization aims to improve the time complexity of DBSCAN (which runs in O(n^2) time without index support and O(n log n) with indexing) by incorporating result-sensitivity.
 
 ## Methodology
 
