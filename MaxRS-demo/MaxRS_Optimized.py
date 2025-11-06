@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-def maxrs(points, rect_w, rect_h, step=1.0):
+def maxrs(points, rect_w, rect_h):
     """
     Rudimentary MaxRS (Maximum Range Sum) demo.
     Brute-force scan of candidate rectangles.
@@ -31,7 +31,7 @@ def maxrs(points, rect_w, rect_h, step=1.0):
     best_pos = None
 
     # grid scan
-    for x in x_candidates: #Start at x coordinates 
+    for x in x_candidates: #Start left side of grid at x coordinates 
         for y in y_candidates: #Define top left as arange of y's
             total = sum( #Define total points inside best grid
                 w for (px, py, w) in points
@@ -65,7 +65,7 @@ points = [
 rect_w, rect_h = 3, 3
 
 # Run demo
-best_x, best_y, best_sum = maxrs(points, rect_w, rect_h, step=0.5)
+best_x, best_y, best_sum = maxrs(points, rect_w, rect_h)
 print(f"Best rectangle at ({best_x:.2f}, {best_y:.2f}) with total weight = {best_sum}")
 
 # --- Visualization ---
