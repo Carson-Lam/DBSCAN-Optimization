@@ -95,11 +95,11 @@ def maxrs_sweepline(points, rect_w, rect_h):
     best_pos = None
     
     # Start left side of grid at x's
-    # Example: X jumps [1,5, 6, 8, ...]
+    # Output: X jumps [1,5, 6, 8, ...]
     for x in x_candidates:
 
         # Filter y points within x-range [x, x+rect_w] 
-        # Example: list of (y, weight)
+        # Output: list of (y, weight)
         points_in_x_range = [
             (py, w) for (px, py, w) in points
             if x <= px <= x + rect_w
@@ -109,10 +109,9 @@ def maxrs_sweepline(points, rect_w, rect_h):
             continue
         
         # Sort y tuple points (p) by y-coordinate (p[0]) for sweeping
-        # Sort syntax: .sort(key = ???, reverse = ???)
-        points_in_x_range.sort(key=lambda p: p[0])
-        
-        y_candidates = sorted(set(p[0] for p in points_in_x_range)) # sorted array for y points IN X RANGE
+        # Sort syntax: list.sort(key = ???, reverse = ???)
+        # points_in_x_range.sort(key=lambda p: p[0])
+        y_candidates = sorted(set(p[0] for p in points_in_x_range)) 
         
         # Sweep through y coordinates IN X RANGE bottom-to-top
         for y in y_candidates:
@@ -146,7 +145,7 @@ def maxrs_sweepline(points, rect_w, rect_h):
 # ]
 
 # Randomly generated Test data, n = 100
-np.random.seed(42)
+np.random.seed(3)
 n = 100
 points = [(np.random.uniform(0, 50), 
            np.random.uniform(0, 50), 
@@ -207,12 +206,12 @@ ax.add_patch(rect)
 
 # Show candidate grid lines
 for x in set(p[0] for p in points):
-    ax.axvline(x, color='red', alpha=0.15, linestyle='--', linewidth=0.5)
+    ax.axvline(x, color='gray', alpha=0.15, linestyle='--', linewidth=0.5)
 for y in set(p[1] for p in points):
     ax.axhline(y, color='gray', alpha=0.15, linestyle='--', linewidth=0.5)
 
 ax.set_title(f"MaxRS Sweep Line Algorithm\n" + 
-             f"Optimal position: ({bx2}, {by2}) | Total weight: {bs2}",
+             f"Optimal position (w sweep): ({bx2}, {by2}) | Total weight: {bs2}",
              fontsize=13, fontweight='bold')
 
 ax.set_xlabel('X coordinate', fontsize=11)
