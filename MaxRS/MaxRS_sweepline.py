@@ -72,7 +72,6 @@ def maxrs_optimized(points, rect_w, rect_h):
 
     return best_pos + (best_sum,)
 
-
 def maxrs_sweepline(points, rect_w, rect_h):
     """
     Sweep line O(n² log n) version.
@@ -84,7 +83,8 @@ def maxrs_sweepline(points, rect_w, rect_h):
         points: list of (x, y, weight)
         rect_w, rect_h: rectangle width and height
     Returns:
-        (best_x, best_y, max_sum)
+        (best_x, best_y, max_sum) 
+        -- Bottom left x, bottom left y, sum of rectangle --
     """
     if not points:
         return (0, 0, 0)
@@ -182,7 +182,9 @@ else:
     print("✗ Results don't match - bug in implementation!")
 print("="*60)
 
+# ===================================================================
 # Visualization
+# ===================================================================
 fig, ax = plt.subplots(figsize=(10, 8))
 
 ax.scatter([p[0] for p in points], [p[1] for p in points],

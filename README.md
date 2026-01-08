@@ -15,7 +15,7 @@ Our goal is to incorporate methodologies used in solving the ACM Maximum Range S
 Since each MaxRS process to find the densest area in a space runs in O(nlogn), the optimized DBSCAN algorithm should have **O(knlogn)** runtime, where k constitutes the amount of points in clusters.
 
 ## Download and Run
-Trial sets of data (visualized with matplotlib) have been provided as testable implementations of both DBScan and MaxRS. 
+Trial sets of data (visualized with matplotlib) have been provided as testable implementations of both DBSCAN and MaxRS. 
 
 ## Project Dependencies
 
