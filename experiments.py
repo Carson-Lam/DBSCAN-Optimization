@@ -8,6 +8,17 @@ Run this file once to produce every figure (PNG) and table (CSV)
 referenced in the paper. All outputs are saved to ./results/.
 
 Dependencies: numpy, matplotlib, scikit-learn, requests
+
+
+E2 Scaling: 3 algos
+one completely vanilla full dbscan (should just be linear)
+MaxRS DBSCAN (with k)
+one completely vanilla dbscan (with k)
+
+k3
+Is there any cherrypicking?
+Make legend, labels larger
+
 """
 
 import numpy as np
@@ -145,6 +156,20 @@ def run_both(data, eps, minPts, max_iterations=None, runs=RUNS):
     }
     return stats_v, stats_o
 
+def run_vanilla_full(data, eps, minPts, runs=RUNS):
+    """Run vanilla DBSCAN to full completion, no k cap."""
+    times_v, rq_v = [], []
+    for _ in range(runs):
+        t0 = time.time()
+        labels_v, _, rq = DBSCAN(data, euclidean_distance, eps, minPts,
+                                  max_iterations=None)
+        times_v.append(time.time() - t0)
+        rq_v.append(rq)
+    return {
+        "time_mean": np.mean(times_v),
+        "time_std":  np.std(times_v),
+        "rq_mean":   np.mean(rq_v),
+    }
 
 def save_fig(fig, name):
     path = os.path.join(RESULTS_DIR, name)
@@ -219,61 +244,130 @@ def exp1_correctness():
 # Subsample Atlanta data at 10/25/50/75/100% and measure both algorithms.
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def exp2_scaling(atlanta_data, eps=0.5, minPts=5, k=5):
+def exp2_scaling(atlanta_data, eps=0.5, minPts=5, k=3):
     print("\n[E2] Scaling experiment")
     fractions = [0.10, 0.25, 0.50, 0.75, 1.00]
     n_full = len(atlanta_data)
 
-    ns, times_v, times_o, rqs_v, rqs_o = [], [], [], [], []
-    rows = []
-
+    stats_full, stats_vk, stats_ok, ns, rows = [], [], [], [], []
+    
     for frac in fractions:
         n = max(50, int(n_full * frac))
         idx = np.random.choice(n_full, n, replace=False)
         subset = atlanta_data[idx]
 
+        sf = run_vanilla_full(subset, eps, minPts)
         sv, so = run_both(subset, eps, minPts, max_iterations=k)
 
         ns.append(n)
-        times_v.append(sv["time_mean"])
-        times_o.append(so["time_mean"])
-        rqs_v.append(sv["rq_mean"])
-        rqs_o.append(so["rq_mean"])
+        stats_full.append(sf)
+        stats_vk.append(sv)
+        stats_ok.append(so)
 
-        rows.append([n, frac, sv["time_mean"], sv["time_std"],
-                     so["time_mean"], so["time_std"],
-                     sv["rq_mean"], so["rq_mean"]])
-        print(f"  n={n}: vanilla={sv['time_mean']:.3f}s, optimized={so['time_mean']:.3f}s, "
-              f"RQ vanilla={sv['rq_mean']:.0f}, RQ opt={so['rq_mean']:.0f}")
+        rows.append([n, frac,
+                     sf["rq_mean"], sf["time_mean"],
+                     sv["rq_mean"], sv["time_mean"],
+                     so["rq_mean"], so["time_mean"]])
+        print(f"  n={n}: vanilla_full rq={sf['rq_mean']:.0f}, "
+              f"vanilla_k rq={sv['rq_mean']:.0f}, "
+              f"gdbscan_k rq={so['rq_mean']:.0f}")
 
     save_csv(rows,
-             ["n", "fraction", "vanilla_time", "vanilla_std",
-              "opt_time", "opt_std", "vanilla_rq", "opt_rq"],
+             ["n", "fraction",
+              "vanilla_full_rq", "vanilla_full_time",
+              "vanilla_k_rq",    "vanilla_k_time",
+              "gdbscan_k_rq",    "gdbscan_k_time"],
              "e2_scaling.csv")
 
-    # Plot
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
 
-    ax1.plot(ns, times_v, "o-", label="Vanilla DBSCAN", color="#2196F3")
-    ax1.plot(ns, times_o, "s-", label="DBSCAN-MaxRS", color="#FF5722")
-    ax1.set_xlabel("Number of points (n)")
-    ax1.set_ylabel("Runtime (seconds)")
-    ax1.set_title("Runtime vs. Dataset Size")
-    ax1.legend()
+    # Runtime
+    ax1.plot(ns, [s["time_mean"] for s in stats_full], "o-",
+             label="Vanilla DBSCAN (full, no k)", color="#2196F3", linewidth=2, markersize=8)
+    ax1.plot(ns, [s["time_mean"] for s in stats_vk], "s--",
+             label=f"Vanilla DBSCAN (top-k, k={k})", color="#9C27B0", linewidth=2, markersize=8)
+    ax1.plot(ns, [s["time_mean"] for s in stats_ok], "^-",
+             label=f"GDBSCAN (top-k, k={k})", color="#FF5722", linewidth=2, markersize=8)
+    ax1.set_xlabel("Number of points (n)", fontsize=12)
+    ax1.set_ylabel("Runtime (seconds)", fontsize=12)
+    ax1.set_title("Runtime vs. Dataset Size", fontsize=13)
+    ax1.legend(fontsize=11)
     ax1.grid(True, alpha=0.3)
 
-    ax2.plot(ns, rqs_v, "o-", label="Vanilla DBSCAN", color="#2196F3")
-    ax2.plot(ns, rqs_o, "s-", label="DBSCAN-MaxRS", color="#FF5722")
-    ax2.set_xlabel("Number of points (n)")
-    ax2.set_ylabel("Range queries issued")
-    ax2.set_title("Range Queries vs. Dataset Size")
-    ax2.legend()
+    # Range queries
+    ax2.plot(ns, [s["rq_mean"] for s in stats_full], "o-",
+             label="Vanilla DBSCAN (full, no k)", color="#2196F3", linewidth=2, markersize=8)
+    ax2.plot(ns, [s["rq_mean"] for s in stats_vk], "s--",
+             label=f"Vanilla DBSCAN (top-k, k={k})", color="#9C27B0", linewidth=2, markersize=8)
+    ax2.plot(ns, [s["rq_mean"] for s in stats_ok], "^-",
+             label=f"GDBSCAN (top-k, k={k})", color="#FF5722", linewidth=2, markersize=8)
+    ax2.set_xlabel("Number of points (n)", fontsize=12)
+    ax2.set_ylabel("Range queries issued", fontsize=12)
+    ax2.set_title("Range Queries vs. Dataset Size", fontsize=13)
+    ax2.legend(fontsize=11)
     ax2.grid(True, alpha=0.3)
 
-    fig.suptitle(f"Scaling Experiment — Atlanta Restaurants (eps={eps}, minPts={minPts}, k={k})",
-                 fontsize=12)
+    fig.suptitle(
+        f"Scaling — Atlanta Restaurants (ε={eps} km, minPts={minPts}, k={k})",
+        fontsize=13)
     plt.tight_layout()
     save_fig(fig, "e2_scaling.png")
+
+# def exp2_scaling(atlanta_data, eps=0.5, minPts=5, k=5):
+#     print("\n[E2] Scaling experiment")
+#     fractions = [0.10, 0.25, 0.50, 0.75, 1.00]
+#     n_full = len(atlanta_data)
+
+#     ns, times_v, times_o, rqs_v, rqs_o = [], [], [], [], []
+#     rows = []
+
+#     for frac in fractions:
+#         n = max(50, int(n_full * frac))
+#         idx = np.random.choice(n_full, n, replace=False)
+#         subset = atlanta_data[idx]
+
+#         sv, so = run_both(subset, eps, minPts, max_iterations=k)
+
+#         ns.append(n)
+#         times_v.append(sv["time_mean"])
+#         times_o.append(so["time_mean"])
+#         rqs_v.append(sv["rq_mean"])
+#         rqs_o.append(so["rq_mean"])
+
+#         rows.append([n, frac, sv["time_mean"], sv["time_std"],
+#                      so["time_mean"], so["time_std"],
+#                      sv["rq_mean"], so["rq_mean"]])
+#         print(f"  n={n}: vanilla={sv['time_mean']:.3f}s, optimized={so['time_mean']:.3f}s, "
+#               f"RQ vanilla={sv['rq_mean']:.0f}, RQ opt={so['rq_mean']:.0f}")
+
+#     save_csv(rows,
+#              ["n", "fraction", "vanilla_time", "vanilla_std",
+#               "opt_time", "opt_std", "vanilla_rq", "opt_rq"],
+#              "e2_scaling.csv")
+
+#     # Plot
+#     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+
+#     ax1.plot(ns, times_v, "o-", label="Vanilla DBSCAN", color="#2196F3")
+#     ax1.plot(ns, times_o, "s-", label="DBSCAN-MaxRS", color="#FF5722")
+#     ax1.set_xlabel("Number of points (n)")
+#     ax1.set_ylabel("Runtime (seconds)")
+#     ax1.set_title("Runtime vs. Dataset Size")
+#     ax1.legend()
+#     ax1.grid(True, alpha=0.3)
+
+#     ax2.plot(ns, rqs_v, "o-", label="Vanilla DBSCAN", color="#2196F3")
+#     ax2.plot(ns, rqs_o, "s-", label="DBSCAN-MaxRS", color="#FF5722")
+#     ax2.set_xlabel("Number of points (n)")
+#     ax2.set_ylabel("Range queries issued")
+#     ax2.set_title("Range Queries vs. Dataset Size")
+#     ax2.legend()
+#     ax2.grid(True, alpha=0.3)
+
+#     fig.suptitle(f"Scaling Experiment — Atlanta Restaurants (eps={eps}, minPts={minPts}, k={k})",
+#                  fontsize=12)
+#     plt.tight_layout()
+#     save_fig(fig, "e2_scaling.png")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -282,42 +376,108 @@ def exp2_scaling(atlanta_data, eps=0.5, minPts=5, k=5):
 # Key result: vanilla finds arbitrary clusters, optimized finds the densest.
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# def exp3_topk_quality(atlanta_data, eps=0.5, minPts=5):
+#     print("\n[E3] Top-k quality experiment")
+#     ks = list(range(1, 11))
+#     rows = []
+
+#     vanilla_total_pts = []
+#     opt_total_pts     = []
+
+#     for k in ks:
+#         sv, so = run_both(atlanta_data, eps, minPts, max_iterations=k, runs=3)
+
+#         v_total = sum(sv["cluster_sizes"])
+#         o_total = sum(so["cluster_sizes"])
+#         vanilla_total_pts.append(v_total)
+#         opt_total_pts.append(o_total)
+
+#         v_sizes_str = str(sv["cluster_sizes"])
+#         o_sizes_str = str(so["cluster_sizes"])
+#         rows.append([k, sv["n_clusters"], v_total, v_sizes_str,
+#                         so["n_clusters"], o_total, o_sizes_str])
+#         print(f"  k={k}: vanilla total_pts={v_total} {sv['cluster_sizes']}, "
+#               f"opt total_pts={o_total} {so['cluster_sizes']}")
+
+#     save_csv(rows,
+#              ["k", "vanilla_n_clusters", "vanilla_total_pts", "vanilla_sizes",
+#               "opt_n_clusters", "opt_total_pts", "opt_sizes"],
+#              "e3_topk_quality.csv")
+
+#     # Plot: total clustered points vs. k
+#     fig, ax = plt.subplots(figsize=(8, 5))
+#     ax.plot(ks, vanilla_total_pts, "o-", label="Vanilla DBSCAN (random order)", color="#2196F3")
+#     ax.plot(ks, opt_total_pts,     "s-", label="DBSCAN-MaxRS (density-first)",   color="#FF5722")
+#     ax.set_xlabel("k  (number of clusters requested)")
+#     ax.set_ylabel("Total points in top-k clusters")
+#     ax.set_title("Top-k Quality: Points Captured vs. k\n(higher = denser clusters found)")
+#     ax.legend()
+#     ax.grid(True, alpha=0.3)
+#     plt.tight_layout()
+#     save_fig(fig, "e3_topk_quality.png")
+
 def exp3_topk_quality(atlanta_data, eps=0.5, minPts=5):
     print("\n[E3] Top-k quality experiment")
     ks = list(range(1, 11))
     rows = []
 
-    vanilla_total_pts = []
-    opt_total_pts     = []
+    vanilla_full_pts = []
+    vanilla_k_pts    = []
+    opt_k_pts        = []
+
+    # Count total points in all clusters for vanilla full
+    labels_full, _, _ = DBSCAN(atlanta_data, euclidean_distance, eps, minPts,
+                                max_iterations=None)
+    
+    all_cluster_sizes = sorted(
+        [sum(1 for v in labels_full.values() if v == i)
+         for i in set(labels_full.values()) - {-1, None}],
+        reverse=True
+    )
 
     for k in ks:
         sv, so = run_both(atlanta_data, eps, minPts, max_iterations=k, runs=3)
 
-        v_total = sum(sv["cluster_sizes"])
-        o_total = sum(so["cluster_sizes"])
-        vanilla_total_pts.append(v_total)
-        opt_total_pts.append(o_total)
+        # Vanilla full: sum of top-k cluster sizes by size order
+        vf_total = sum(all_cluster_sizes[:k])
+        v_total  = sum(sv["cluster_sizes"])
+        o_total  = sum(so["cluster_sizes"])
 
-        v_sizes_str = str(sv["cluster_sizes"])
-        o_sizes_str = str(so["cluster_sizes"])
-        rows.append([k, sv["n_clusters"], v_total, v_sizes_str,
-                        so["n_clusters"], o_total, o_sizes_str])
-        print(f"  k={k}: vanilla total_pts={v_total} {sv['cluster_sizes']}, "
-              f"opt total_pts={o_total} {so['cluster_sizes']}")
+        vanilla_full_pts.append(vf_total)
+        vanilla_k_pts.append(v_total)
+        opt_k_pts.append(o_total)
+
+        rows.append([k,
+                     vf_total,
+                     sv["n_clusters"], v_total, str(sv["cluster_sizes"]),
+                     so["n_clusters"], o_total, str(so["cluster_sizes"])])
+        print(f"  k={k}: vanilla_full={vf_total}, "
+              f"vanilla_k={v_total} {sv['cluster_sizes']}, "
+              f"gdbscan={o_total} {so['cluster_sizes']}")
 
     save_csv(rows,
-             ["k", "vanilla_n_clusters", "vanilla_total_pts", "vanilla_sizes",
-              "opt_n_clusters", "opt_total_pts", "opt_sizes"],
+             ["k", "vanilla_full_top_k_pts",
+              "vanilla_k_clusters", "vanilla_k_total_pts", "vanilla_k_sizes",
+              "gdbscan_clusters",   "gdbscan_total_pts",   "gdbscan_sizes"],
              "e3_topk_quality.csv")
 
-    # Plot: total clustered points vs. k
-    fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot(ks, vanilla_total_pts, "o-", label="Vanilla DBSCAN (random order)", color="#2196F3")
-    ax.plot(ks, opt_total_pts,     "s-", label="DBSCAN-MaxRS (density-first)",   color="#FF5722")
-    ax.set_xlabel("k  (number of clusters requested)")
-    ax.set_ylabel("Total points in top-k clusters")
-    ax.set_title("Top-k Quality: Points Captured vs. k\n(higher = denser clusters found)")
-    ax.legend()
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(ks, vanilla_full_pts, "o-",
+            label="Vanilla DBSCAN (full run, top-k by size)", color="#2196F3",
+            linewidth=2, markersize=8)
+    ax.plot(ks, vanilla_k_pts, "s--",
+            label="Vanilla DBSCAN (stopped at k)", color="#9C27B0",
+            linewidth=2, markersize=8)
+    ax.plot(ks, opt_k_pts, "^-",
+            label="GDBSCAN (density-first, stopped at k)", color="#FF5722",
+            linewidth=2, markersize=8)
+    ax.set_xlabel("k  (number of clusters requested)", fontsize=12)
+    ax.set_ylabel("Total points in top-k clusters", fontsize=12)
+    ax.set_title(
+        "Top-k Quality: Points Captured vs. k\n"
+        "(higher = denser clusters found earlier)",
+        fontsize=13)
+    ax.legend(fontsize=11)
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
     save_fig(fig, "e3_topk_quality.png")
@@ -431,51 +591,51 @@ def exp5_multi_dataset(real_datasets, eps=0.5, minPts=5, k=5):
 # Run on sparse synthetic datasets where noise dominates.
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# def exp6_early_termination():
-#     print("\n[E6] Early termination savings")
-#     noise_ratios = [0.50, 0.60, 0.70, 0.80, 0.90]
-#     eps, minPts, k = 1.0, 5, 3
-#     rows = []
+def exp6_early_termination():
+    print("\n[E6] Early termination savings")
+    noise_ratios = [0.50, 0.60, 0.70, 0.80, 0.90]
+    eps, minPts, k = 1.0, 5, 3
+    rows = []
 
-#     rq_savings  = []
-#     pts_savings = []
-#     labels_nrs  = []
+    rq_savings  = []
+    pts_savings = []
+    labels_nrs  = []
 
-#     for nr in noise_ratios:
-#         data = generate_sparse_data(n_points=1000, noise_ratio=nr)
-#         sv, so = run_both(data, eps, minPts, max_iterations=k, runs=3)
+    for nr in noise_ratios:
+        data = generate_sparse_data(n_points=1000, noise_ratio=nr)
+        sv, so = run_both(data, eps, minPts, max_iterations=k, runs=3)
 
-#         rq_save  = (1 - so["rq_mean"] / sv["rq_mean"]) * 100 if sv["rq_mean"] > 0 else 0.0
-#         pts_save = so["n_noise"] - sv["n_noise"]   # extra noise points avoided
+        rq_save  = (1 - so["rq_mean"] / sv["rq_mean"]) * 100 if sv["rq_mean"] > 0 else 0.0
+        pts_save = so["n_noise"] - sv["n_noise"]   # extra noise points avoided
 
-#         # Count unlabeled points when opt terminates early
-#         # (points marked noise by early exit, not by explicit range query)
-#         rq_savings.append(rq_save)
-#         pts_savings.append(so["n_noise"])
-#         labels_nrs.append(nr)
+        # Count unlabeled points when opt terminates early
+        # (points marked noise by early exit, not by explicit range query)
+        rq_savings.append(rq_save)
+        pts_savings.append(so["n_noise"])
+        labels_nrs.append(nr)
 
-#         rows.append([nr, sv["rq_mean"], so["rq_mean"], rq_save,
-#                      sv["n_noise"], so["n_noise"]])
-#         print(f"  noise={nr:.0%}: RQ savings={rq_save:.1f}%, "
-#               f"vanilla noise pts={sv['n_noise']}, opt noise pts={so['n_noise']}")
+        rows.append([nr, sv["rq_mean"], so["rq_mean"], rq_save,
+                     sv["n_noise"], so["n_noise"]])
+        print(f"  noise={nr:.0%}: RQ savings={rq_save:.1f}%, "
+              f"vanilla noise pts={sv['n_noise']}, opt noise pts={so['n_noise']}")
 
-#     save_csv(rows,
-#              ["noise_ratio", "vanilla_rq", "opt_rq", "rq_savings_pct",
-#               "vanilla_noise_pts", "opt_noise_pts"],
-#              "e6_early_termination.csv")
+    save_csv(rows,
+             ["noise_ratio", "vanilla_rq", "opt_rq", "rq_savings_pct",
+              "vanilla_noise_pts", "opt_noise_pts"],
+             "e6_early_termination.csv")
 
-#     fig, ax = plt.subplots(figsize=(8, 5))
-#     ax.bar([f"{nr:.0%}" for nr in noise_ratios], rq_savings, color="#FF5722", alpha=0.8)
-#     ax.set_xlabel("Noise ratio in dataset")
-#     ax.set_ylabel("Range query savings (%)")
-#     ax.set_title("Early Termination Benefit vs. Noise Ratio\n"
-#                  "(higher noise → more queries saved by early exit)")
-#     ax.set_ylim(0, 100)
-#     ax.grid(True, alpha=0.3, axis="y")
-#     for i, v in enumerate(rq_savings):
-#         ax.text(i, v + 1, f"{v:.1f}%", ha="center", fontsize=9)
-#     plt.tight_layout()
-#     save_fig(fig, "e6_early_termination.png")
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.bar([f"{nr:.0%}" for nr in noise_ratios], rq_savings, color="#FF5722", alpha=0.8)
+    ax.set_xlabel("Noise ratio in dataset")
+    ax.set_ylabel("Range query savings (%)")
+    ax.set_title("Early Termination Benefit vs. Noise Ratio\n"
+                 "(higher noise → more queries saved by early exit)")
+    ax.set_ylim(0, 100)
+    ax.grid(True, alpha=0.3, axis="y")
+    for i, v in enumerate(rq_savings):
+        ax.text(i, v + 1, f"{v:.1f}%", ha="center", fontsize=9)
+    plt.tight_layout()
+    save_fig(fig, "e6_early_termination.png")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

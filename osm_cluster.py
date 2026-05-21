@@ -168,7 +168,7 @@ def DBSCAN_Optimized(DB, distFunc, eps, minPts, max_iterations=None):
 
     rect_w2, rect_h2 = 2 * eps, 2 * eps
 
-    while unlabeled and (max_iterations is None or outer_loop_iterations < max_iterations):     
+    while unlabeled and (max_iterations is None or C < max_iterations):     
         outer_loop_iterations += 1
         unlabeled_list = list(unlabeled)
 
@@ -440,4 +440,19 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    chicago_bbox = (41.6445, -87.9401, 42.0230, -87.5240)
+    restaurants = load_osm_data('chicago_restaurants_osm.json')
+    data = convert_to_xy(restaurants, chicago_bbox)
+    
+    eps = 0.5
+    minPts = 5
+    max_iterations = 3
+    
+    print(f"Loaded {len(data)} points")
+    
+    labels_opt, outer_loops, maxrs, rq_opt = DBSCAN_Optimized(
+        data, euclidean_distance, eps, minPts, max_iterations=max_iterations
+    )
+    
+    print(f"Outer loops completed: {outer_loops}")
+    print(f"Clusters found: {len(set(labels_opt.values()) - {-1, None})}")

@@ -146,12 +146,13 @@ def DBSCAN_Optimized(DB, distFunc, eps, minPts, max_iterations=None):
     rect_w2, rect_h2 = 2 * eps, 2 * eps
 
     # Outer Loop: Repeated find densest region w MaxRS
-    while unlabeled and (max_iterations is None or outer_loop_iterations < max_iterations):     
+    while unlabeled and (max_iterations is None or C < max_iterations):     
         outer_loop_iterations += 1
         unlabeled_list = list(unlabeled)
 
         # M' - Larger MaxRS rect (outside DBSCAN circle)
         x2, y2, sum2, points2 = maxrs_sweepline_LP(unlabeled_list, rect_w2, rect_h2)
+        print(f"Iteration {outer_loop_iterations}: MaxRS sum={sum2}, unlabeled={len(unlabeled)}")
         maxrs_calls += 1
 
         # CASE 1: |M'| < minpoints so terminate DBSCAN
