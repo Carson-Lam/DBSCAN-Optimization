@@ -224,6 +224,14 @@ def exp1_correctness():
         o_sets = sorted([frozenset(s) for s in o_clusters.values()], key=len, reverse=True)
 
         match = (v_sets == o_sets)
+        differing_points = sum(1 for pt in lv if lv[pt] != lo[pt] and lv[pt] not in (-1, None))
+        print(f" Differing point assignments: {differing_points}")
+        missing = [s for s in v_sets if s not in o_sets]
+        print(f"  Clusters in vanilla not found in optimized: {len(missing)}")
+        print(f"  Sizes of missing clusters: {sorted([len(s) for s in missing], reverse=True)[:10]}")
+        extra = [s for s in o_sets if s not in v_sets]
+        print(f"  Clusters in optimized not found in vanilla: {len(extra)}")
+        print(f"  Sizes of extra clusters: {sorted([len(s) for s in extra], reverse=True)[:10]}")
         if not match:
             all_pass = False
 

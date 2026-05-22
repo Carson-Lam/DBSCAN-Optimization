@@ -1,0 +1,5 @@
+Dataset,True clusters,Vanilla clusters,Optimized clusters,Match
+Sparse (70% noise),3,26,26,PASS
+Sparse (80% noise),3,44,44,FAIL
+Dense (10 clusters),10,9,9,PASS
+Varied density (5 clust),5,46,46,FAIL
