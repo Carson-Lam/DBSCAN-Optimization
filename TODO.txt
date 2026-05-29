@@ -1,0 +1,14 @@
+20/5/26
+for every core point in a cluster, look at # pts in epsilon range (defines max density)
+Redo E3 - sort by density (pts/area from concavehull)
+
+27/5/26
+parameter 1: alpha % (90 default) --> noise | 1 - alpha (10 default) --> clusters pts
+parameter 2: number of clusters for 1 - alpha pts
+parameter 3: stdev of clusters
+X and Y axis of graph 0 to 1
+Make N clusters (stdev of stdev), (centroid randomly placed 0 to 1), (each cluster w 1-alpha/N points)
+
+Experiments: scaling, map 
+takes v long to run, start with smaller pt amount (5000)
+changing pt amount warrants algorithm parameter change

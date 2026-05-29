@@ -7,18 +7,7 @@ Reproduces all experimental results for the paper:
 Run this file once to produce every figure (PNG) and table (CSV)
 referenced in the paper. All outputs are saved to ./results/.
 
-Dependencies: numpy, matplotlib, scikit-learn, requests
-
-
-E2 Scaling: 3 algos
-one completely vanilla full dbscan (should just be linear)
-MaxRS DBSCAN (with k)
-one completely vanilla dbscan (with k)
-
-k3
-Is there any cherrypicking?
-Make legend, labels larger
-
+Dependencies: numpy, matplotlib, alphashape, shapely, requests
 """
 
 import numpy as np
@@ -28,6 +17,8 @@ import time
 import json
 import os
 import csv
+import alphashape
+from shapely.geometry import MultiPoint
 
 # ── Project imports ──────────────────────────────────────────────────────────
 # Assumes benchmark.py and osm_cluster.py are in the same directory.
@@ -321,6 +312,7 @@ def exp2_scaling(atlanta_data, eps=0.5, minPts=5, k=3):
     plt.tight_layout()
     save_fig(fig, "e2_scaling.png")
 
+# EXPERIMENT 2 - OLD VERSION with 2 lines
 # def exp2_scaling(atlanta_data, eps=0.5, minPts=5, k=5):
 #     print("\n[E2] Scaling experiment")
 #     fractions = [0.10, 0.25, 0.50, 0.75, 1.00]
@@ -383,46 +375,6 @@ def exp2_scaling(atlanta_data, eps=0.5, minPts=5, k=3):
 # Vary k from 1..10. Show cluster sizes found by each algorithm.
 # Key result: vanilla finds arbitrary clusters, optimized finds the densest.
 # ═══════════════════════════════════════════════════════════════════════════════
-
-# def exp3_topk_quality(atlanta_data, eps=0.5, minPts=5):
-#     print("\n[E3] Top-k quality experiment")
-#     ks = list(range(1, 11))
-#     rows = []
-
-#     vanilla_total_pts = []
-#     opt_total_pts     = []
-
-#     for k in ks:
-#         sv, so = run_both(atlanta_data, eps, minPts, max_iterations=k, runs=3)
-
-#         v_total = sum(sv["cluster_sizes"])
-#         o_total = sum(so["cluster_sizes"])
-#         vanilla_total_pts.append(v_total)
-#         opt_total_pts.append(o_total)
-
-#         v_sizes_str = str(sv["cluster_sizes"])
-#         o_sizes_str = str(so["cluster_sizes"])
-#         rows.append([k, sv["n_clusters"], v_total, v_sizes_str,
-#                         so["n_clusters"], o_total, o_sizes_str])
-#         print(f"  k={k}: vanilla total_pts={v_total} {sv['cluster_sizes']}, "
-#               f"opt total_pts={o_total} {so['cluster_sizes']}")
-
-#     save_csv(rows,
-#              ["k", "vanilla_n_clusters", "vanilla_total_pts", "vanilla_sizes",
-#               "opt_n_clusters", "opt_total_pts", "opt_sizes"],
-#              "e3_topk_quality.csv")
-
-#     # Plot: total clustered points vs. k
-#     fig, ax = plt.subplots(figsize=(8, 5))
-#     ax.plot(ks, vanilla_total_pts, "o-", label="Vanilla DBSCAN (random order)", color="#2196F3")
-#     ax.plot(ks, opt_total_pts,     "s-", label="DBSCAN-MaxRS (density-first)",   color="#FF5722")
-#     ax.set_xlabel("k  (number of clusters requested)")
-#     ax.set_ylabel("Total points in top-k clusters")
-#     ax.set_title("Top-k Quality: Points Captured vs. k\n(higher = denser clusters found)")
-#     ax.legend()
-#     ax.grid(True, alpha=0.3)
-#     plt.tight_layout()
-#     save_fig(fig, "e3_topk_quality.png")
 
 def exp3_topk_quality(atlanta_data, eps=0.5, minPts=5):
     print("\n[E3] Top-k quality experiment")
@@ -489,6 +441,188 @@ def exp3_topk_quality(atlanta_data, eps=0.5, minPts=5):
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
     save_fig(fig, "e3_topk_quality.png")
+
+# EXPERIMENT 3 - OLD VERSION with 2 lines
+# def exp3_topk_quality(atlanta_data, eps=0.5, minPts=5):
+#     print("\n[E3] Top-k quality experiment")
+#     ks = list(range(1, 11))
+#     rows = []
+
+#     vanilla_total_pts = []
+#     opt_total_pts     = []
+
+#     for k in ks:
+#         sv, so = run_both(atlanta_data, eps, minPts, max_iterations=k, runs=3)
+
+#         v_total = sum(sv["cluster_sizes"])
+#         o_total = sum(so["cluster_sizes"])
+#         vanilla_total_pts.append(v_total)
+#         opt_total_pts.append(o_total)
+
+#         v_sizes_str = str(sv["cluster_sizes"])
+#         o_sizes_str = str(so["cluster_sizes"])
+#         rows.append([k, sv["n_clusters"], v_total, v_sizes_str,
+#                         so["n_clusters"], o_total, o_sizes_str])
+#         print(f"  k={k}: vanilla total_pts={v_total} {sv['cluster_sizes']}, "
+#               f"opt total_pts={o_total} {so['cluster_sizes']}")
+
+#     save_csv(rows,
+#              ["k", "vanilla_n_clusters", "vanilla_total_pts", "vanilla_sizes",
+#               "opt_n_clusters", "opt_total_pts", "opt_sizes"],
+#              "e3_topk_quality.csv")
+
+#     # Plot: total clustered points vs. k
+#     fig, ax = plt.subplots(figsize=(8, 5))
+#     ax.plot(ks, vanilla_total_pts, "o-", label="Vanilla DBSCAN (random order)", color="#2196F3")
+#     ax.plot(ks, opt_total_pts,     "s-", label="DBSCAN-MaxRS (density-first)",   color="#FF5722")
+#     ax.set_xlabel("k  (number of clusters requested)")
+#     ax.set_ylabel("Total points in top-k clusters")
+#     ax.set_title("Top-k Quality: Points Captured vs. k\n(higher = denser clusters found)")
+#     ax.legend()
+#     ax.grid(True, alpha=0.3)
+#     plt.tight_layout()
+#     save_fig(fig, "e3_topk_quality.png")
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# EXPERIMENT 3.5 — CLUSTER DENSITY QUALITY
+# For each k, compute density = pts / area (concave hull) for each cluster.
+# Compare vanilla full (top-k by size), vanilla-k, and GDBSCAN-k.
+# Key result: GDBSCAN finds clusters that are denser, not just larger.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def cluster_density(points_array, eps):
+    """
+    Compute density of a cluster as pts / concave hull area.
+    Falls back to convex hull if alphashape returns a non-Polygon.
+    Returns pts/area. If area is zero or computation fails, returns 0.
+    """
+
+    pts = points_array
+    n = len(pts)
+
+    if n < 3:
+        return 0.0
+
+    try:
+        # alpha controls hull tightness. 0 = convex hull.
+        # We use eps-based alpha: ** 1/(eps) ** gives a hull that respects
+        # the natural scale of the clustering radius.
+        alpha = 1.0 / eps
+        hull = alphashape.alphashape(pts, alpha)
+
+        # If alphashape returns a degenerate result, fall back to convex hull
+        if hull is None or hull.is_empty or hull.geom_type not in ("Polygon", "MultiPolygon"):
+            hull = MultiPoint(pts).convex_hull
+
+        area = hull.area
+        if area <= 0:
+            return 0.0
+
+        return n / area
+
+    except Exception:
+        # Last resort fallback
+        try:
+            from shapely.geometry import MultiPoint
+            hull = MultiPoint(pts).convex_hull
+            area = hull.area
+            return n / area if area > 0 else 0.0
+        except Exception:
+            return 0.0
+
+
+def exp3_5_density(atlanta_data, eps=0.5, minPts=5):
+    """
+    E3.5: Compare average cluster density (pts/area via concave hull)
+    across the three algorithm variants as k varies from 1 to 10.
+    """
+    print("\n[E3.5] Cluster density experiment")
+    ks = list(range(1, 11))
+
+    vanilla_full_densities = []
+    vanilla_k_densities    = []
+    opt_k_densities        = []
+    rows = []
+
+    # ── Vanilla full: run once, extract clusters sorted by size ──────────────
+    print("  Running vanilla full for density baseline...")
+    labels_full, _, _ = DBSCAN(atlanta_data, euclidean_distance, eps, minPts,
+                                max_iterations=None)
+
+    # Build cluster arrays sorted by size descending
+    cluster_ids_full = set(labels_full.values()) - {-1, None}
+    full_clusters_sorted = sorted(
+        [
+            np.array([p for p in atlanta_data if labels_full[tuple(p)] == cid])
+            for cid in cluster_ids_full
+        ],
+        key=len,
+        reverse=True
+    )
+
+    # Precompute densities for all full clusters
+    full_cluster_densities = [
+        cluster_density(pts, eps) for pts in full_clusters_sorted
+    ]
+
+    # ── Per-k loop ────────────────────────────────────────────────────────────
+    for k in ks:
+        # Vanilla full top-k: average density of the k largest clusters
+        vf_densities = full_cluster_densities[:k]
+        vf_avg = np.mean(vf_densities) if vf_densities else 0.0
+
+        # Vanilla-k and GDBSCAN-k
+        sv, so = run_both(atlanta_data, eps, minPts, max_iterations=k, runs=1)
+
+        # Compute density for each cluster found
+        def avg_density_for_labels(labels):
+            cids = set(labels.values()) - {-1, None}
+            densities = []
+            for cid in cids:
+                pts = np.array([p for p in atlanta_data if labels[tuple(p)] == cid])
+                densities.append(cluster_density(pts, eps))
+            return np.mean(densities) if densities else 0.0
+
+        vk_avg = avg_density_for_labels(sv["labels"])
+        ok_avg = avg_density_for_labels(so["labels"])
+
+        vanilla_full_densities.append(vf_avg)
+        vanilla_k_densities.append(vk_avg)
+        opt_k_densities.append(ok_avg)
+
+        rows.append([k, vf_avg, vk_avg, ok_avg])
+        print(f"  k={k}: vanilla_full_density={vf_avg:.2f}, "
+              f"vanilla_k_density={vk_avg:.2f}, "
+              f"gdbscan_density={ok_avg:.2f}")
+
+    save_csv(rows,
+             ["k", "vanilla_full_avg_density",
+              "vanilla_k_avg_density", "gdbscan_avg_density"],
+             "e3_5_density.csv")
+
+    # ── Plot ─────────────────────────────────────────────────────────────────
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(ks, vanilla_full_densities, "o-",
+            label="Vanilla DBSCAN (full run, top-k by size)", color="#2196F3",
+            linewidth=2, markersize=8)
+    ax.plot(ks, vanilla_k_densities, "s--",
+            label="Vanilla DBSCAN (stopped at k)", color="#9C27B0",
+            linewidth=2, markersize=8)
+    ax.plot(ks, opt_k_densities, "^-",
+            label="GDBSCAN (density-first, stopped at k)", color="#FF5722",
+            linewidth=2, markersize=8)
+    ax.set_xlabel("k  (number of clusters requested)", fontsize=12)
+    ax.set_ylabel("Average cluster density (pts / hull area)", fontsize=12)
+    ax.set_title(
+        "Top-k Cluster Density vs. k\n"
+        "(higher = spatially tighter clusters found)",
+        fontsize=13)
+    ax.legend(fontsize=11)
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    save_fig(fig, "e3_5_density.png")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -716,6 +850,10 @@ def main():
     else:
         data_varied = generate_varied_density_data(n_points=1000)
         exp3_topk_quality(data_varied, eps=1.0, minPts=5)
+
+    # ── E3.5: Cluster density ────────────────────────────────────
+    if "Atlanta" in real_datasets:
+        exp3_5_density(real_datasets["Atlanta"], eps=0.5, minPts=5)
 
     # ── E4: Parameter sensitivity ────────────────────────────────
     if "Atlanta" in real_datasets:
