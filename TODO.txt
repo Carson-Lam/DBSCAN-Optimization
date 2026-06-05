@@ -12,3 +12,11 @@ Make N clusters (stdev of stdev), (centroid randomly placed 0 to 1), (each clust
 Experiments: scaling, map 
 takes v long to run, start with smaller pt amount (5000)
 changing pt amount warrants algorithm parameter change
+
+3/6/26
+Section 7 Conclusion
+5.1 Synthetic and real world
+5.2 qualitative (Maps)
+5.3 quantitative (correctnesss, scaling)
+5.4 Cluster quality (sizing)
+5.5 Synthetic data (Map, scaling)
