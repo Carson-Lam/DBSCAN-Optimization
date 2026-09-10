@@ -23,3 +23,10 @@ Section 7 Conclusion
 
 5/6/26
 Density vs size debate
+
+10/9/26
+Important note:
+- Added r-trees to both vanilla and MaxRS-DBSCAN & seeing a large speedup. However,
+MaxRS-DBSCAN is still significantly slower than vanilla DBSCAN.
+- O(m · RangeQuery  +  k · n log n) we are reducing the RangeQuery part, but the k * n log n 
+from the sweepline is contributing much of the runtime
