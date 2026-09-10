@@ -789,7 +789,8 @@ def plot_clustering_comparison(data, eps, minPts, k, dataset_name, filename):
     sv, so = run_both(data, eps, minPts, max_iterations=k, runs=1)
     lv, lo = sv["labels"], so["labels"]
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 8))
+    # fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 8)) # Old figure sizing May 2026
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 16))
 
     def _plot(ax, labels, title):
         clusters = sorted(set(labels.values()) - {-1, None})
@@ -803,14 +804,15 @@ def plot_clustering_comparison(data, eps, minPts, k, dataset_name, filename):
         if len(noise):
             ax.scatter(noise[:, 0], noise[:, 1], c="lightgray",
                        marker="x", s=30, alpha=0.4, label=f"Noise ({len(noise)} pts)")
-        ax.set_title(title, fontsize=11)
-        ax.set_xlabel("X (km)"); ax.set_ylabel("Y (km)")
-        ax.legend(fontsize=7, loc="best")
+        ax.set_title(title, fontsize=18)
+        ax.set_xlabel("X (km)", fontsize=17)
+        ax.set_ylabel("Y (km)", fontsize=17)
+        ax.legend(fontsize=18, loc="best")
         ax.grid(True, alpha=0.3)
 
     _plot(ax1, lv, f"Vanilla DBSCAN (random order)\nTop-{k} clusters found")
     _plot(ax2, lo, f"DBSCAN-MaxRS (density-first)\nTop-{k} clusters found")
-    fig.suptitle(f"{dataset_name} — ε={eps} km, minPts={minPts}, k={k}", fontsize=13)
+    fig.suptitle(f"{dataset_name} — ε={eps} km, minPts={minPts}, k={k}", fontsize=18)
     plt.tight_layout()
     save_fig(fig, filename)
 
@@ -863,7 +865,7 @@ def main():
     exp5_multi_dataset(real_datasets, eps=0.5, minPts=5, k=5)
 
     # ── E6: Early termination ────────────────────────────────────
-    # exp6_early_termination()
+    exp6_early_termination()
 
     # ── Visualizations ───────────────────────────────────────────
     for name, data in real_datasets.items():

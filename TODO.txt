@@ -20,3 +20,6 @@ Section 7 Conclusion
 5.3 quantitative (correctnesss, scaling)
 5.4 Cluster quality (sizing)
 5.5 Synthetic data (Map, scaling)
+
+5/6/26
+Density vs size debate
