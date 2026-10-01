@@ -124,87 +124,8 @@ def RangeQuery(DB, distFunc, Q, eps):
             N.append(P_tuple)
     return N
 
-
 def euclidean_distance(p1, p2):
     return np.linalg.norm(np.array(p1) - np.array(p2))
-
-# ------------------------------------------------------------------------
-# 20/5/2026 Version of DBSCAN - One phase only, 2eps x 2eps rectangle
-# ------------------------------------------------------------------------
-
-# def DBSCAN_Optimized(DB, distFunc, eps, minPts, max_iterations=None):
-#     """
-#     Optimized DBSCAN using MaxRS to find densest regions first.
-#     """
-#     labels = {tuple(P): None for P in DB}
-#     C = 0
-#     unlabeled = set(tuple(P) for P in DB)
-
-#     # Counters (DEBUG)
-#     outer_loop_iterations = 0
-#     maxrs_calls = 0
-#     range_queries = 0
-
-#     # Calculate rectangle sizes
-#     rect_w2, rect_h2 = 2 * eps, 2 * eps
-
-#     # Outer Loop: Repeated find densest region w MaxRS
-#     while unlabeled and (max_iterations is None or C < max_iterations):     
-#         outer_loop_iterations += 1
-#         unlabeled_list = list(unlabeled)
-
-#         # M' - Larger MaxRS rect (outside DBSCAN circle)
-#         x2, y2, sum2, points2 = maxrs_sweepline_LP(unlabeled_list, rect_w2, rect_h2)
-#         print(f"Iteration {outer_loop_iterations}: MaxRS sum={sum2}, unlabeled={len(unlabeled)}")
-#         maxrs_calls += 1
-
-#         # CASE 1: |M'| < minpoints so terminate DBSCAN
-#         if sum2 < minPts:
-#             break
-                
-#         # CASE 2: there may be a cluster
-#         P = tuple(points2[0])
-
-#         # Check if P is a core point by finding its neighbors
-#         N = RangeQuery(DB, distFunc, P, eps) 
-#         range_queries += 1
-
-#         # P does not have enough neighbors, Mark as noise (-1)
-#         if len(N) < minPts:
-#             labels[P] = -1 
-#             unlabeled.discard(P)
-#             continue
-
-#         # P has enough neighbors, ExpandCluster on P
-#         C += 1
-#         labels[P] = C
-#         unlabeled.discard(P)
-
-#         # Seed set - all neighbors of P except itself
-#         S = set(N) - {P}
-
-#         while S:
-#             Q = S.pop()
-#             if labels[Q] == -1: labels[Q] = C  
-#             if labels[Q] is not None: continue
-#             labels[Q] = C
-#             unlabeled.discard(Q)
-#             N = RangeQuery(DB, distFunc, Q, eps)
-#             range_queries += 1
-#             if len(N) >= minPts:
-#                 S.update(N)
-
-#     # If we stopped early due to max_iterations, mark remaining as noise
-#     if unlabeled:
-#         for P in unlabeled:
-#             labels[P] = -1
-
-#     return labels, outer_loop_iterations, maxrs_calls, range_queries
-
-
-# ------------------------------------------------------------------------
-# 21/5/2026 Version of DBSCAN - Two phases, eps/sqrt(2) first, then 2*eps rectangles
-# ------------------------------------------------------------------------
 
 def DBSCAN_Optimized(DB, distFunc, eps, minPts, max_iterations=None):
     """

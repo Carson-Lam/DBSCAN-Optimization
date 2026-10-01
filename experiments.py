@@ -22,7 +22,7 @@ from shapely.geometry import MultiPoint
 
 # ── Project imports ──────────────────────────────────────────────────────────
 # Assumes benchmark.py and osm_cluster.py are in the same directory.
-from benchmark_topk import (
+from algorithms import (
     DBSCAN,
     DBSCAN_Optimized,
     euclidean_distance,
@@ -30,7 +30,7 @@ from benchmark_topk import (
     generate_dense_data,
     generate_varied_density_data,
 )
-from osm_cluster import load_osm_data, convert_to_xy
+from datasets import load_osm_data, convert_to_xy
 
 # ── Output directory ──────────────────────────────────────────────────────────
 RESULTS_DIR = "./results"
@@ -42,44 +42,6 @@ RUNS = 5  # Repetitions per timing measurement
 # ═══════════════════════════════════════════════════════════════════════════════
 # DATASET LOADERS
 # ═══════════════════════════════════════════════════════════════════════════════
-
-def load_osm_city(json_file, bbox):
-    """Load an OSM restaurant JSON file and convert to km coordinates."""
-    restaurants = load_osm_data(json_file)
-    if restaurants is None:
-        return None
-    data = convert_to_xy(restaurants, bbox)
-    print(f"  Loaded {len(data)} points from {json_file}")
-    return data
-
-
-def load_all_real_datasets():
-    """
-    Load Atlanta, NYC, and Chicago restaurant datasets.
-    Run osm.py with the bounding boxes below to generate the JSON files.
-    """
-    datasets = {}
-
-    atlanta_bbox = (33.6490, -84.5510, 33.8860, -84.2890)
-    nyc_bbox     = (40.4774, -74.2591, 40.9176, -73.7004)
-    chicago_bbox = (41.6445, -87.9401, 42.0230, -87.5240)
-
-    specs = [
-        ("Atlanta",  "atlanta_restaurants_osm.json",  atlanta_bbox),
-        ("NYC",      "nyc_restaurants_osm.json",      nyc_bbox),
-        ("Chicago",  "chicago_restaurants_osm.json",  chicago_bbox),
-    ]
-
-    for name, fname, bbox in specs:
-        if os.path.exists(fname):
-            data = load_osm_city(fname, bbox)
-            if data is not None:
-                datasets[name] = data
-        else:
-            print(f"  [SKIP] {fname} not found. Run osm.py with bbox={bbox}")
-
-    return datasets
-
 
 def make_synthetic_datasets():
     """

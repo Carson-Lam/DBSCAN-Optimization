@@ -30,3 +30,13 @@ Important note:
 MaxRS-DBSCAN is still significantly slower than vanilla DBSCAN.
 - O(m · RangeQuery  +  k · n log n) we are reducing the RangeQuery part, but the k * n log n 
 from the sweepline is contributing much of the runtime
+
+30/9/26
+- Ditched the MaxRS sweep since that's what's contributing most of the time comp
+- Replaced with a grid + heap that's consumed incrementally.
+- Did some testing. 
+    + Correctness is good
+    + 1.6-6.3x faster
+    + Grows with n
+    - We do not always get k-densest clusters, 75% of time we get k=1 densest
+- Testing was all on synthetic gaussian clusters not OSM data
