@@ -460,14 +460,37 @@ def DBSCAN_Optimized_indexed(DB, distFunc, eps, minPts, max_iterations=None,
 def DBSCAN_grid(DB, distFunc, eps, minPts, max_iterations=None,
                 rtree=None, seeder=None, n_shifts=4, refine=1):
     """
+    DBSCAN but the seeds are chosen densest-first using the grid in
+    seed_grid.py instead of a MaxRS sweep
+ 
+    The clustering itself is unchanged. The grid only decides what order we
+    find clusters in, so a full run gives the same answer as ordinary
+    DBSCAN.
+ 
+    Phase 1 seeds from fine cells, where the seed is guaranteed core.
+    Phase 2 seeds from coarse 3x3 blocks, which catch clusters phase 1
+    missed and tell us when to stop.
+ 
     Parameters
     ----------
-    max_iterations : int or None
-    refine : int 
-        1 = seed from the densest grid cell directly. 
-        >1 = have the grid propose that many candidates 
-            and pick the true argmax by exact
-            eps-count at `refine` extra range queries per cluster.
+    distFunc : 
+        unused, kept so the signature matches DBSCAN(). The R-tree
+        does its own distance maths.
+    max_iterations : 
+        stop after this many clusters (the top-k budget).
+    rtree, seeder :
+        pass prebuilt ones to keep construction out of timing runs.
+    n_shifts : 
+        extra shifted copies of the fine grid (1, 2 or 4).
+    refine : 
+        1 seeds straight from the densest cell. Higher values have
+        the grid suggest that many candidates and range-query each to
+        pick the genuinely densest. Costs `refine` queries per cluster.
+ 
+    Returns (labels, outer_iterations, seed_calls, range_queries)
+
+    labels maps each point tuple to a cluster id, or -1 for noise
+
     """
     if rtree is None:
         rtree = RTreeIndex(DB)
@@ -475,13 +498,19 @@ def DBSCAN_grid(DB, distFunc, eps, minPts, max_iterations=None,
         seeder = IncrementalGridSeeder(DB, eps, minPts, n_shifts=n_shifts)
  
     labels = {tuple(P): None for P in DB}
-    C = 0
+    C = 0                               # clusters found
     outer_iterations = 0
     seed_calls = 0
-    range_queries = 0
+    range_queries = 0                   # the cost metric we report
  
     def expand(seed, cluster_id, skip_seed_query=False):
-        """Standard DBSCAN expansion, R-tree backed."""
+        """Ordinary DBSCAN expansion. The only addition is seeder.remove()
+        on each point we claim so it stops being offered as a seed.
+ 
+        skip_seed_query is for phase 1 where we already know the seed is
+        core. Both branches of the if statement run the same query but 
+        skip_seed_query avoids the extra check for minPts.
+        """
         nonlocal range_queries
         if skip_seed_query:
             N = rtree.range_query(seed, eps)
@@ -496,6 +525,8 @@ def DBSCAN_grid(DB, distFunc, eps, minPts, max_iterations=None,
         S = set(N) - {seed}
         while S:
             Q = S.pop()
+            # was written off as noise, but it's reachable from here after
+            # all, so it joins as a border point
             if labels[Q] == -1:
                 labels[Q] = cluster_id
             if labels[Q] is not None:
@@ -504,12 +535,14 @@ def DBSCAN_grid(DB, distFunc, eps, minPts, max_iterations=None,
             seeder.remove(Q)
             Nq = rtree.range_query(Q, eps)
             range_queries += 1
-            if len(Nq) >= minPts:
+            if len(Nq) >= minPts:         # only core points keep it growing
                 S.update(Nq)
         return True
- 
+
+    # Phase 1: seeds we know are core --------------------------------------
     while max_iterations is None or C < max_iterations:
         if refine > 1:
+            # Shortlist from the grid, then pick the real winner by exact count.
             cands = seeder.peek_core_candidates(refine)
             if not cands:
                 seed = None
@@ -525,12 +558,14 @@ def DBSCAN_grid(DB, distFunc, eps, minPts, max_iterations=None,
             seed = seeder.pop_guaranteed_core_seed()
         seed_calls += 1
         if seed is None:
-            break
+            break               # no dense cell has unlabeled points left
         outer_iterations += 1
         C += 1
         expand(seed, C, skip_seed_query=True)
  
-    # Phase 2: candidate seeds from 3x3 coarse blocks 
+    # Phase 2: candidate seeds from 3x3 coarse blocks ------------------------
+    # Catches clusters spread thin enough that no single fine cell hit
+    # minPts. These seeds aren't guaranteed so we have to check each one
     while max_iterations is None or C < max_iterations:
         seed = seeder.pop_candidate_seed()
         seed_calls += 1
@@ -540,12 +575,15 @@ def DBSCAN_grid(DB, distFunc, eps, minPts, max_iterations=None,
         N = rtree.range_query(seed, eps)
         range_queries += 1
         if len(N) < minPts:
-            labels[seed] = -1          # lemon seed
+            # block was dense overall, but the point isn't core so we mark it
+            # noise. It can still be picked up as a border point later.
+            labels[seed] = -1          
             seeder.remove(seed)
             continue
         C += 1
         labels[seed] = C
         seeder.remove(seed)
+        # Same as expand(), written out because we already have N from the rtree query
         S = set(N) - {seed}
         while S:
             Q = S.pop()
@@ -559,7 +597,8 @@ def DBSCAN_grid(DB, distFunc, eps, minPts, max_iterations=None,
             range_queries += 1
             if len(Nq) >= minPts:
                 S.update(Nq)
- 
+
+    # Whatever we never reached is noise
     for P in DB:
         pt = tuple(P)
         if labels[pt] is None:
