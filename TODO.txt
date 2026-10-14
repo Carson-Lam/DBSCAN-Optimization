@@ -1,0 +1,42 @@
+20/5/26
+for every core point in a cluster, look at # pts in epsilon range (defines max density)
+Redo E3 - sort by density (pts/area from concavehull)
+
+27/5/26
+parameter 1: alpha % (90 default) --> noise | 1 - alpha (10 default) --> clusters pts
+parameter 2: number of clusters for 1 - alpha pts
+parameter 3: stdev of clusters
+X and Y axis of graph 0 to 1
+Make N clusters (stdev of stdev), (centroid randomly placed 0 to 1), (each cluster w 1-alpha/N points)
+
+Experiments: scaling, map 
+takes v long to run, start with smaller pt amount (5000)
+changing pt amount warrants algorithm parameter change
+
+3/6/26
+Section 7 Conclusion
+5.1 Synthetic and real world
+5.2 qualitative (Maps)
+5.3 quantitative (correctnesss, scaling)
+5.4 Cluster quality (sizing)
+5.5 Synthetic data (Map, scaling)
+
+5/6/26
+Density vs size debate
+
+10/9/26
+Important note:
+- Added r-trees to both vanilla and MaxRS-DBSCAN & seeing a large speedup. However,
+MaxRS-DBSCAN is still significantly slower than vanilla DBSCAN.
+- O(m · RangeQuery  +  k · n log n) we are reducing the RangeQuery part, but the k * n log n 
+from the sweepline is contributing much of the runtime
+
+30/9/26
+- Ditched the MaxRS sweep since that's what's contributing most of the time comp
+- Replaced with a grid + heap that's consumed incrementally.
+- Did some testing. 
+    + Correctness is good
+    + 1.6-6.3x faster
+    + Grows with n
+    - We do not always get k-densest clusters, 75% of time we get k=1 densest
+- Testing was all on synthetic gaussian clusters not OSM data
