@@ -283,6 +283,12 @@ def maxrs_sweepline_LP(points, rect_w, rect_h):
             if current_sum > best_sum:
                 best_sum = current_sum
                 best_pos = current_pos
+                # Collect points in best rectangle
+                best_points = [
+                    pt for pt in points  # Use original points list
+                    if best_pos[0] <= pt[0] <= best_pos[0] + rect_w 
+                    and best_pos[1] <= pt[1] <= best_pos[1] + rect_h
+                ]
 
         # (6) Now, we want to move i to point p in case we terminated early via the j condition, and remove that point
         if not all_points_covered:
@@ -294,6 +300,288 @@ def maxrs_sweepline_LP(points, rect_w, rect_h):
             break
     
     return best_pos + (best_sum, best_points)
+
+def single_run_maxrs(points, rect_w, rect_h):
+    """
+    Sweep line O(n² log n) version.
+    
+    Key optimization: For each x-position, filter points ONCE,
+    then sweep through y-positions checking only filtered points.
+    
+    Args:
+        points: list of (x, y, weight)
+        rect_w, rect_h: rectangle width and height
+    Returns:
+        (best_x, best_y, max_sum)
+    """
+    if not points:
+        #return (0, 0, 0, [])
+        return {}
+    
+    # Check if points have weights
+    has_weights = len(points[0]) == 3
+    
+    # Normalize points to always have weights
+    if has_weights:
+        normalized_points = points
+    else:
+        normalized_points = [(x, y, 1) for (x, y) in points]
+    
+    # Points are tuples, which are sorted by first value by default
+    points_by_x_val = sorted(normalized_points)
+    
+    # best_sum = -np.inf
+    # best_pos = None
+    # best_points = []
+
+    # Map points -> [sum of points in RS, position of RS, list of points in RS]
+    results_per_point = {}
+
+    # Add first element to list
+    points_in_x_range = [points_by_x_val[0]]
+    next_element_index = 1
+
+    # Once all points are within our x range, we can use each remaining as bottom of rectangle and break
+    # I don't think this holds anymore. A point might be completely excluded if we do this
+    #all_points_covered = False
+    
+    # Start left side of grid at x's
+    # Output: X jumps [1,5, 6, 8, ...]
+    for p in points_by_x_val:
+        horizontal_ub = p[0] + rect_w
+        vertical_lb = p[1] - rect_h
+
+        # (1) Add new points to list
+        while next_element_index < len(points_by_x_val) and points_by_x_val[next_element_index][0] <= horizontal_ub:
+            points_in_x_range.append(points_by_x_val[next_element_index])
+            next_element_index += 1
+
+        # (1a) MAYBE: Check if last point is now in range. If so, use every point as bottom and check, then break
+        # if next_element_index == len(points_by_x_val):
+        #     all_points_covered = True
+
+        # (2) Sort list by y-values
+        # THEORY: I think this is very fast because the list is already mostly sorted
+        points_in_x_range = sorted(points_in_x_range, key=lambda t: t[1])
+
+        # (3) Iterate until we reach a point in range vertically
+        i = 0
+        #if not all_points_covered:
+        while i < len(points_in_x_range) and points_in_x_range[i][1] < vertical_lb:
+            i += 1
+
+        # (4) Create sum for initial window. i serves as bottom (inclusive) and j as top (exclusive)
+        # Moved this from outer loop, now should track best for each point in innter loop
+        best_sum = -np.inf
+        best_pos = None
+        best_points = []
+
+        current_sum = 0
+        current_pos = (p[0], points_in_x_range[i][1])
+        j = i
+        while j < len(points_in_x_range) and points_in_x_range[j][1] <= points_in_x_range[i][1] + rect_h:
+            current_sum += points_in_x_range[j][2]
+            j += 1
+
+        # No need for commented section now, can directly set as "best" for the left anchor
+        best_sum = current_sum
+        best_pos = current_pos
+        best_points = [
+            pt for pt in points
+            if best_pos[0] <= pt[0] <= best_pos[0] + rect_w
+            and best_pos[1] <= pt[1] <= best_pos[1] + rect_h
+        ]
+        # if current_sum > best_sum:
+        #     best_sum = current_sum
+        #     best_pos = current_pos
+        #     # Collect points in best rectangle
+        #     best_points = [
+        #         pt for pt in points  # Use original points list
+        #         if best_pos[0] <= pt[0] <= best_pos[0] + rect_w 
+        #         and best_pos[1] <= pt[1] <= best_pos[1] + rect_h
+        #     ]
+        
+        # (5) Iterate through points, altering window as we go, until we use the current left-most point as bottom
+        # while j < len(points_in_x_range) and (points_in_x_range[i] != p or all_points_covered):
+        while j < len(points_in_x_range) and points_in_x_range[i] != p:
+            # Remove weight of previous bottom point
+            current_sum -= points_in_x_range[i][2]
+            # Shift i to next point and reset current pos
+            i += 1
+            current_pos = (p[0], points_in_x_range[i][1])
+            # Shift j and add new points
+            while j < len(points_in_x_range) and points_in_x_range[j][1] <= points_in_x_range[i][1] + rect_h:
+                current_sum += points_in_x_range[j][2]
+                j += 1
+            # Check new window
+            if current_sum > best_sum:
+                best_sum = current_sum
+                best_pos = current_pos
+                # Collect points in best rectangle
+                best_points = [
+                    pt for pt in points  # Use original points list
+                    if best_pos[0] <= pt[0] <= best_pos[0] + rect_w 
+                    and best_pos[1] <= pt[1] <= best_pos[1] + rect_h
+                ]
+
+        # (6) Now, we want to move i to point p in case we terminated early via the j condition, and remove that point
+        #if not all_points_covered:
+        while i < len(points_in_x_range) and points_in_x_range[i] != p:
+            i += 1
+        if i < len(points_in_x_range):
+            del points_in_x_range[i]
+
+        # (7) Finally, mark the result for the RS anchored on the left by this point        
+        results_per_point[p] = best_pos + (best_sum, best_points)
+
+    # Sort results by densest RS
+    results_per_point = dict(sorted(results_per_point.items(), 
+                                    key=lambda item: item[1][2], # item[1] is the dict value, item[1][2] accesses the sum
+                                    reverse=True))
+    
+    return results_per_point
+
+def DBSCAN_single_maxrs(DB, distFunc, eps, minPts, max_iterations=None):
+    """
+    Optimized DBSCAN using MaxRS to find densest regions first.
+    
+    Two-phase approach:
+    Phase 1: MaxRS with rect side eps/sqrt(2). Any region found GUARANTEES
+             all points inside are core points (max pairwise distance = eps).
+             No "lemon" seeds possible.
+    Phase 2: MaxRS with rect side 2*eps. Finds candidate regions that may
+             contain core points, but seed point may still be noise.
+             Terminates when no 2*eps rectangle has >= minPts points,
+             guaranteeing all remaining unlabeled points are noise.
+    """
+    labels = {tuple(P): None for P in DB}
+    C = 0
+    unlabeled = set(tuple(P) for P in DB)
+
+    # Counters
+    phase1_iterations = 0
+    phase2_iterations = 0
+    maxrs_calls = 0
+    range_queries = 0
+
+    rect_small = eps / np.sqrt(2)   # Phase 1: guaranteed core points
+    rect_large = 2 * eps            # Phase 2: conservative superset
+
+    # ── Phase 1: eps/sqrt(2) ─────────────────────────────────────────────────
+    results_per_point = single_run_maxrs(unlabeled_list, rect_small, rect_small)
+    maxrs_calls += 1
+    while unlabeled and (max_iterations is None or C < max_iterations):
+        unlabeled_list = list(unlabeled)
+        
+        # x, y, best_sum, best_points = maxrs_sweepline_LP(
+        #     unlabeled_list, rect_small, rect_small
+        # )
+
+        # Get densest RS
+        densest_point, val = next(iter(results_per_point.items()))
+        x, y, best_sum, best_points = val
+        # Remove from dict
+        results_per_point.pop(densest_point, None)
+
+        # No rectangle of this size is dense enough — exit Phase 1
+        if best_sum < minPts:
+            break
+
+        phase1_iterations += 1
+
+        # Every point in this rectangle is guaranteed to be a core point,
+        # so we can pick any of them as seed — pick the first
+        P = tuple(best_points[0])
+
+        N = RangeQuery(DB, distFunc, P, eps)
+        range_queries += 1
+
+        # Should always pass in Phase 1, but keep as sanity check
+        if len(N) < minPts:
+            labels[P] = -1
+            unlabeled.discard(P)
+            continue
+
+        C += 1
+        labels[P] = C
+        unlabeled.discard(P)
+        results_per_point.pop(P, None)
+
+        S = set(N) - {P}
+        while S:
+            Q = S.pop()
+            results_per_point.pop(Q, None)
+            if labels[Q] == -1: labels[Q] = C
+            if labels[Q] is not None: continue
+            labels[Q] = C
+            unlabeled.discard(Q)
+            N = RangeQuery(DB, distFunc, Q, eps)
+            range_queries += 1
+            if len(N) >= minPts:
+                S.update(N)
+
+    # ── Phase 2: 2*eps ───────────────────────────────────────────────────────
+    results_per_point = single_run_maxrs(unlabeled_list, rect_large, rect_large)
+    maxrs_calls += 1
+    while unlabeled and (max_iterations is None or C < max_iterations):
+        unlabeled_list = list(unlabeled)
+        
+        # x, y, best_sum, best_points = maxrs_sweepline_LP(
+        #     unlabeled_list, rect_large, rect_large
+        # )
+
+        # Get densest RS
+        densest_point, val = next(iter(results_per_point.items()))
+        x, y, best_sum, best_points = val
+        # Remove from dict
+        results_per_point.pop(densest_point, None)
+
+        # No rectangle of this size is dense enough — all remaining are noise
+        if best_sum < minPts:
+            break
+
+        phase2_iterations += 1
+
+        # Cycle points in rectangle
+        for pt in best_points:
+            P = tuple(pt)
+            # Ignore if we've expanded already
+            if labels[P] is not None: continue
+
+            # Run range query and discard if not a core
+            N = RangeQuery(DB, distFunc, P, eps)
+            range_queries += 1
+            if len(N) < minPts:
+                labels[P] = -1
+                unlabeled.discard(P)
+                results_per_point.pop(P, None)
+                continue
+
+            # Otherwise, expand core point
+            C += 1
+            labels[P] = C
+            unlabeled.discard(P)
+            results_per_point.pop(P, None)
+
+            S = set(N) - {P}
+            while S:
+                Q = S.pop()
+                results_per_point.pop(Q, None)
+                if labels[Q] == -1: labels[Q] = C
+                if labels[Q] is not None: continue
+                labels[Q] = C
+                unlabeled.discard(Q)
+                N = RangeQuery(DB, distFunc, Q, eps)
+                range_queries += 1
+                if len(N) >= minPts:
+                    S.update(N)
+
+    # Mark all remaining unlabeled points as noise
+    for P in unlabeled:
+        labels[P] = -1
+
+    outer_loop_iterations = phase1_iterations + phase2_iterations
+    return labels, outer_loop_iterations, maxrs_calls, range_queries
 
 def DBSCAN_indexed(DB, distFunc, eps, minPts, max_iterations=None, rtree=None):
     """
