@@ -40,3 +40,30 @@ from the sweepline is contributing much of the runtime
     + Grows with n
     - We do not always get k-densest clusters, 75% of time we get k=1 densest
 - Testing was all on synthetic gaussian clusters not OSM data
+
+15/10/26
+
+- Yes, the grid is single scan 
+
+            MaxRS   	Grid                    Ratio
+small box	ε/√2	    ε/√2 cell	            identical
+large box	2ε	        3ε (3×3 of ε-cells)	    grid 1.5× looser
+1.5 looser because grid can't center on point p. p can be on border of it's cell,
+so we need a cell side s >= eps
+
+- 
+Coarse rule: We have multiuple coarse grids. We get the smallest course grid with side >= eps
+Fine rule: Not next smaller grid, needs to be largest grid with side <= eps / sqrt(2) bc guarantee
+            cares about the diagonal. Guarantee is that "If a fine cell contains ≥ minPts points, 
+            every point in that cell is a core point" but only if every pair in the cell
+            is within eps, including farthest apart at on the diagonal corners.
+
+Using given list:
+        eps = 0.1
+        'next smaller than eps'         -> 0.080   diagonal 0.1131  > eps   BREAKS
+        'largest level <= eps/sqrt(2)'  -> 0.067   diagonal 0.0948  <= eps  OK
+
+- Hierarchy for MaxRS should still be valid using the same method. Precompute MaxRS for
+    a ladder of rectangle sizes. A small dense rectangle stays dense at larger ε, 
+    a large sparse rectangle stays sparse at smaller ε. Cost would probably be O(L*n log n) MaxRS
+    vs O(L*n) grid for an index of L size.
