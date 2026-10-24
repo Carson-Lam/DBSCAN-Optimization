@@ -9,6 +9,9 @@ import matplotlib.pyplot as plt
 import time
 from spatial_index import RTreeIndex
 from seed_grid import IncrementalGridSeeder
+from grid_index import GridSeedIndex, _Walk, fine_seed, fine_candidates, coarse_seed
+
+_UNSEEN = -2 
 
 # DBSCAN
 def RangeQuery(DB, distFunc, Q, eps):
@@ -893,3 +896,157 @@ def DBSCAN_grid(DB, distFunc, eps, minPts, max_iterations=None,
             labels[pt] = -1
  
     return labels, outer_iterations, seed_calls, range_queries
+
+
+def DBSCAN_indexed_ids(DB, eps, minPts, max_iterations=None, rtree=None):
+    """Vanilla DBSCAN with R-tree range queries. Baseline.
+ 
+    Same algorithm as DBSCAN_indexed, but index-based.
+ 
+    Returns (labels, main_loop_iterations, range_queries).
+    """
+    xy = np.asarray(DB, dtype=float)
+    n = len(xy)
+    if rtree is None:
+        rtree = RTreeIndex(xy)
+    pts = rtree._points
+    labels = [_UNSEEN] * n          # a list: much faster than numpy per element
+    C = 0
+    iterations = 0
+    range_queries = 0
+ 
+    for p in range(n):
+        iterations += 1
+        if labels[p] != _UNSEEN:
+            continue
+        N = rtree.range_query_ids(pts[p], eps)
+        range_queries += 1
+        if len(N) < minPts:
+            labels[p] = -1
+            continue
+        if max_iterations is not None and C >= max_iterations:
+            break
+        C += 1
+        labels[p] = C
+        S = set(N)
+        S.discard(p)
+        while S:
+            q = S.pop()
+            if labels[q] == -1:        # was noise; reachable after all
+                labels[q] = C
+            if labels[q] != _UNSEEN:
+                continue
+            labels[q] = C
+            Nq = rtree.range_query_ids(pts[q], eps)
+            range_queries += 1
+            if len(Nq) >= minPts:
+                S.update(Nq)
+ 
+    out = np.array(labels, dtype=np.int64)
+    out[out == _UNSEEN] = -1
+    return out, iterations, range_queries
+
+
+def DBSCAN_grid_ids(DB, eps, minPts, max_iterations=None, rtree=None,
+                    index=None, refine=1):
+    """DBSCAN with grid-based densest-first seed selection.
+ 
+    Same two phases as DBSCAN_grid and the clustering is the same as ordinaryDBSCAN
+
+    Parameters
+    ----------
+    max_iterations : stop after this many clusters (top-k). None = all.
+    rtree : prebuilt RTreeIndex over DB, to keep it out of timing runs.
+    index : prebuilt GridSeedIndex over DB for this eps. One index serves
+        any minPts.
+    refine : 1 = seed from the densest fine cell. m > 1 = take the m
+        densest cells' candidates, range-query each, seed from the one with
+        the most neighbours. Costs m queries per cluster; the winner's
+        query is reused for its expansion.
+ 
+    Returns (labels, outer_iterations, seed_calls, range_queries).
+    """
+    xy = np.asarray(DB, dtype=float)
+    n = len(xy)
+    if rtree is None:
+        rtree = RTreeIndex(xy)
+    if index is None:
+        index = GridSeedIndex(xy, eps)
+    elif index.eps != eps:
+        raise ValueError(f"index was built for eps={index.eps}, query uses eps={eps}")
+    pts = rtree._points
+ 
+    labels = [_UNSEEN] * n
+    C = 0
+    outer_iterations = 0
+    seed_calls = 0
+    range_queries = 0
+ 
+    def query(p):
+        nonlocal range_queries
+        range_queries += 1
+        return rtree.range_query_ids(pts[p], eps)
+ 
+    def expand(seed, N, cid):
+        """Grow cluster cid from a seed already known to be core.
+        N is the seed's neighbourhood, already queried by the caller."""
+        labels[seed] = cid
+        S = set(N)
+        S.discard(seed)
+        while S:
+            q = S.pop()
+            if labels[q] == -1:        # was noise; joins as a border point
+                labels[q] = cid
+            if labels[q] != _UNSEEN:
+                continue
+            labels[q] = cid
+            Nq = query(q)
+            if len(Nq) >= minPts:      # only core points keep it growing
+                S.update(Nq)
+ 
+    def budget_left():
+        return max_iterations is None or C < max_iterations
+ 
+    # Phase 1: seeds that are certainly core 
+    fine = _Walk(index.fine, index.fine.by_count, index.fine.counts,
+                 minPts, labels, _UNSEEN)
+    while budget_left():
+        seed_calls += 1
+        if refine > 1:
+            cands = fine_candidates(fine, refine)
+            if not cands:
+                break
+            best, best_N = -1, None
+            for c in cands:
+                N = query(c)
+                if best_N is None or len(N) > len(best_N):
+                    best, best_N = c, N
+            seed, N = best, best_N
+        else:
+            seed = fine_seed(fine)
+            if seed < 0:
+                break
+            N = query(seed)
+        outer_iterations += 1
+        C += 1
+        expand(seed, N, C)
+ 
+    # Phase 2: candidates from 3x3 coarse blocks 
+    coarse = _Walk(index.coarse, index.coarse.by_block, index.coarse.block,
+                   minPts, labels, _UNSEEN)
+    while budget_left():
+        seed_calls += 1
+        seed = coarse_seed(coarse)
+        if seed < 0:
+            break                       # no core points remain anywhere
+        outer_iterations += 1
+        N = query(seed)
+        if len(N) < minPts:
+            labels[seed] = -1           # not core; may still join as border later
+            continue
+        C += 1
+        expand(seed, N, C)
+ 
+    out = np.array(labels, dtype=np.int64)
+    out[out == _UNSEEN] = -1
+    return out, outer_iterations, seed_calls, range_queries

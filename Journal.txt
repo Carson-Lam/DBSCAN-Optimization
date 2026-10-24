@@ -67,3 +67,18 @@ Using given list:
     a ladder of rectangle sizes. A small dense rectangle stays dense at larger ε, 
     a large sparse rectangle stays sparse at smaller ε. Cost would probably be O(L*n log n) MaxRS
     vs O(L*n) grid for an index of L size.
+
+24/10/26:
+- Duplicate coordinates? Synth data doesnt duplicate, but business locations will duplicate.  
+    The seed_grid sseeder deduplicates by coordinate. Instead we identify points by
+    integer index so [labels] is an array instead of a tuple dict.
+
+- Can border points differ when checking for correctness? Border assignments depends on visit
+    order even for vanilla DBSCAN
+
+- Tie handling? Cells with equal counts can come out at another order and mess up which cluster
+    a truncated run finds first. We can break deterministically by cell key?
+
+- Rebuild index w numpy instead of per-point python loops. integer coordinates by floor, 
+    np.unique(...,return_counts=True) for counts, etc. Currently the labeling in __init__
+    loops in python over every point and takes too long.

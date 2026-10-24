@@ -47,6 +47,28 @@ class RTreeIndex:
                 out.append(self._points[i])
         return out
 
+    def range_query_ids(self, q, eps):
+        """
+        Like range_query, but returns point indices instead of coordinate
+        tuples. Indices follow the order the points were passed in.
+
+        Two points at the same coordinates come back as two separate
+        indices, so they count as two points. range_query returns tuples,
+        and anything keyed on those tuples merges duplicates into one.
+        """
+        qx, qy = q[0], q[1]
+        bbox = (qx - eps, qy - eps, qx + eps, qy + eps)
+        eps2 = eps * eps
+        pts = self._points
+        out = []
+        for i in self.idx.intersection(bbox):
+            px, py = pts[i]
+            dx = px - qx
+            dy = py - qy
+            if dx * dx + dy * dy <= eps2:
+                out.append(i)
+        return out
+
     def __len__(self):
         return len(self._points)
 
