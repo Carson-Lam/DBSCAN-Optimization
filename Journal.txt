@@ -82,3 +82,50 @@ Using given list:
 - Rebuild index w numpy instead of per-point python loops. integer coordinates by floor, 
     np.unique(...,return_counts=True) for counts, etc. Currently the labeling in __init__
     loops in python over every point and takes too long.
+
+5/11/26:
+Additions:
+- HierarchicalGridIndex in grid_index.py: one index holding grids at 
+sides b, 2b, 4b, … Serves any ε in [eps_min, eps_max] and any minPts.
+
+    - All rungs share one point array sorted by Morton (Z-order) code, 
+        so every cell on every rung is a contiguous slice of it.
+    - Fine rung = largest side ≤ ε/√2. Coarse rung = smallest side ≥ ε.
+
+- DBSCAN_grid_ids takes either index (Hierarchical and regular) via levels_for(eps). 
+Out-of-range ε or a mismatched index now raises an error instead of giving wrong results.
+
+- Tests: 92 → 688. Deliberately breaking the selection rules gets caught.
+
+- New bench_hgrid.py: index cost, price of reuse, reuse payoff, noise density.
+
+Results:
+- Index for a 45× range of ε (7 rungs): 
+    - 1.24× the memory of a single-ε index
+    - 2–3× the build time'
+    - Pays off after ~3 different ε values. At 5m points, from the third ε onwards,
+    the Hierarchical index costs less build time than you would need to build three 
+    single-ε indexes individually.
+
+- 30M points: 174 s build, 2.9 GB index, 5.4 GB peak.
+
+- Correctness is generally correctness
+
+Problems:
+1. In short, noise too sparse can fill a block past minPts. For full runs, 
+early termination only works when noise is sparse. According to the proof, every 
+block holding unlabelled points needs to be under minPts. There is a case where a noise-only
+block with more than minPts gets every point checked individually.
+
+Causes:
+    - The block is much bigger than a ε-neighbourhood. 3x3 block: 3ε × 3ε = 9ε² vs ε-disc: πε² ≈ 3.1ε²
+    - A point marked noise still counts towards neighbour's ε-neighborhoods. We can't subtract it
+    - The denser the noise, the more blocks pass minPts by chance, leading to that case, and leading   
+        to more points geteting checked one at a time.
+
+2. When ε sits right above a Hierarchical rung, the coarse grid (smallest grid more than ε) 
+is up to 2x too big. For sparse noise that means a lot of individually checked noise points.
+
+Conclusions from problems:
+- The full-run speedup only happens when the noise is sparse. Worst case is still same as DBSCAN,
+so algorithhm should still be faster. Building the grid can be overhead.

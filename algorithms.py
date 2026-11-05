@@ -9,7 +9,8 @@ import matplotlib.pyplot as plt
 import time
 from spatial_index import RTreeIndex
 from seed_grid import IncrementalGridSeeder
-from grid_index import GridSeedIndex, _Walk, fine_seed, fine_candidates, coarse_seed
+from grid_index import (GridSeedIndex, HierarchicalGridIndex, _Walk,
+                        fine_seed, fine_candidates, coarse_seed)
 
 _UNSEEN = -2 
 
@@ -951,14 +952,15 @@ def DBSCAN_grid_ids(DB, eps, minPts, max_iterations=None, rtree=None,
                     index=None, refine=1):
     """DBSCAN with grid-based densest-first seed selection.
  
-    Same two phases as DBSCAN_grid and the clustering is the same as ordinaryDBSCAN
+    Same two phases as DBSCAN_grid and the clustering is the same as ordinary DBSCAN
 
     Parameters
     ----------
     max_iterations : stop after this many clusters (top-k). None = all.
     rtree : prebuilt RTreeIndex over DB, to keep it out of timing runs.
-    index : prebuilt GridSeedIndex over DB for this eps. One index serves
-        any minPts.
+    index : prebuilt index over DB. Either a GridSeedIndex built for this
+        eps, or a HierarchicalGridIndex whose [eps_min, eps_max] covers it.
+        Both serve any minPts; the hierarchy also serves any eps in range.
     refine : 1 = seed from the densest fine cell. m > 1 = take the m
         densest cells' candidates, range-query each, seed from the one with
         the most neighbours. Costs m queries per cluster; the winner's
@@ -972,8 +974,9 @@ def DBSCAN_grid_ids(DB, eps, minPts, max_iterations=None, rtree=None,
         rtree = RTreeIndex(xy)
     if index is None:
         index = GridSeedIndex(xy, eps)
-    elif index.eps != eps:
-        raise ValueError(f"index was built for eps={index.eps}, query uses eps={eps}")
+    if index.n != n:
+        raise ValueError(f"index was built over {index.n} points, DB has {n}")
+    fine_level, coarse_level = index.levels_for(eps)   # raises if eps unsupported
     pts = rtree._points
  
     labels = [_UNSEEN] * n
@@ -1008,7 +1011,7 @@ def DBSCAN_grid_ids(DB, eps, minPts, max_iterations=None, rtree=None,
         return max_iterations is None or C < max_iterations
  
     # Phase 1: seeds that are certainly core 
-    fine = _Walk(index.fine, index.fine.by_count, index.fine.counts,
+    fine = _Walk(fine_level, fine_level.by_count, fine_level.counts,
                  minPts, labels, _UNSEEN)
     while budget_left():
         seed_calls += 1
@@ -1032,7 +1035,7 @@ def DBSCAN_grid_ids(DB, eps, minPts, max_iterations=None, rtree=None,
         expand(seed, N, C)
  
     # Phase 2: candidates from 3x3 coarse blocks 
-    coarse = _Walk(index.coarse, index.coarse.by_block, index.coarse.block,
+    coarse = _Walk(coarse_level, coarse_level.by_block, coarse_level.block,
                    minPts, labels, _UNSEEN)
     while budget_left():
         seed_calls += 1
