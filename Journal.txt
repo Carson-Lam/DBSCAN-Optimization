@@ -165,3 +165,10 @@ so algorithhm should still be faster. Building the grid can be overhead.
 
      - Algorithms now only has three functions: DBSCAN_indexed, DBSCAN_grid, and DBSCAN_single_maxrs
 
+
+- Do we need any additional benchmarks in the paper?
+
+    - Namely, the hierarchical grid benchmark that lists:
+        index cost, price of reuse, noise density
+    
+    - test_grid_index that lists dbscan correctness

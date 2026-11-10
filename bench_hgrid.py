@@ -33,10 +33,10 @@ import time
 
 import numpy as np
 
-from algorithms import DBSCAN_grid_ids
+from algorithms import DBSCAN_grid
 from correctness import Reference
 from grid_index import GridSeedIndex, HierarchicalGridIndex, SQRT2
-from spatial_index import RTreeIndex
+from spatial_index import IndexiconIndex
 
 RESULTS = "results"
 os.makedirs(RESULTS, exist_ok=True)
@@ -121,7 +121,7 @@ def part_price(trials=30, n=3000, minPts=5):
     acc = {}  # (eps, index, refine) -> dict of sums
     for t in range(trials):
         xy = varied_clusters(n, 6, seed=1000 + t)
-        rt = RTreeIndex(xy)
+        rt = IndexiconIndex(xy)
         H = HierarchicalGridIndex(xy, eps_min=0.1, eps_max=1.0)
         for eps in eps_list:
             ref = Reference(xy, eps, minPts)
@@ -132,15 +132,15 @@ def part_price(trials=30, n=3000, minPts=5):
                 for refine in (1, 8):
                     a = acc.setdefault((eps, name, refine), dict(
                         trials=0, rq_full=0, lemons=0, rq_k3=0, hit1=0, hit3=0))
-                    lab, outer, _, rq = DBSCAN_grid_ids(
-                        xy, eps, minPts, rtree=rt, index=idx, refine=refine)
+                    lab, outer, _, rq = DBSCAN_grid(
+                        xy, eps, minPts, tree=rt, grid=idx, refine=refine)
                     a["trials"] += 1
                     a["rq_full"] += rq
                     a["lemons"] += outer - len(np.unique(lab[lab != -1]))
-                    lab1, *_ = DBSCAN_grid_ids(xy, eps, minPts, max_iterations=1,
-                                               rtree=rt, index=idx, refine=refine)
-                    lab3, _, _, rq3 = DBSCAN_grid_ids(xy, eps, minPts, max_iterations=3,
-                                                      rtree=rt, index=idx, refine=refine)
+                    lab1, *_ = DBSCAN_grid(xy, eps, minPts, max_iterations=1,
+                                               tree=rt, grid=idx, refine=refine)
+                    lab3, _, _, rq3 = DBSCAN_grid(xy, eps, minPts, max_iterations=3,
+                                                      tree=rt, grid=idx, refine=refine)
                     a["rq_k3"] += rq3
                     a["hit1"] += topk_hits(lab1, ref, 1)
                     a["hit3"] += topk_hits(lab3, ref, 3) / 3
@@ -179,7 +179,7 @@ def part_price(trials=30, n=3000, minPts=5):
 def part_reuse(n=40_000, k=3):
     print(f"\n[reuse] one hierarchy vs a fresh single-eps index per query, n={n}")
     xy = fixed_clusters(n)
-    rt = RTreeIndex(xy)
+    rt = IndexiconIndex(xy)
     queries = [(eps, mp) for eps in (0.2, 0.25, 0.3, 0.35, 0.4, 0.5)
                for mp in (4, 6, 10)]
 
@@ -187,15 +187,15 @@ def part_reuse(n=40_000, k=3):
     H = HierarchicalGridIndex(xy, eps_min=0.2, eps_max=0.5)
     t_build_h = time.time() - t0
     t0 = time.time()
-    rq_h = sum(DBSCAN_grid_ids(xy, e, m, max_iterations=k, rtree=rt, index=H)[3]
+    rq_h = sum(DBSCAN_grid(xy, e, m, max_iterations=k, tree=rt, grid=H)[3]
                for e, m in queries)
     t_query_h = time.time() - t0
 
     t0 = time.time()
     rq_s = 0
     for e, m in queries:
-        rq_s += DBSCAN_grid_ids(xy, e, m, max_iterations=k, rtree=rt,
-                                index=GridSeedIndex(xy, e))[3]
+        rq_s += DBSCAN_grid(xy, e, m, max_iterations=k, tree=rt,
+                                grid=GridSeedIndex(xy, e))[3]
     t_single = time.time() - t0
 
     print(f"  {len(queries)} queries (6 eps x 3 minPts), top-{k}")
@@ -218,17 +218,17 @@ def part_noise(n_noise=20_000, eps=0.3, minPts=5, k=3):
         c = rng.uniform(0.15 * side, 0.85 * side, size=(5, 2))
         xy = np.vstack([rng.normal(ci, 0.12, size=(300, 2)) for ci in c]
                        + [rng.uniform(0, side, size=(n_noise, 2))])
-        rt = RTreeIndex(xy)
+        rt = IndexiconIndex(xy)
         # range chosen so eps falls just above a rung: coarse rung ~1.9x eps,
         # fine rung ~0.67x ideal close to the hierarchy's worst case
         H = HierarchicalGridIndex(xy, eps_min=0.672 * eps, eps_max=eps)
         out = [rho, np.pi * eps ** 2 * rho]
         for name, idx in (("single", GridSeedIndex(xy, eps)), ("hierarchy", H)):
             _, coarse = idx.levels_for(eps)
-            lab, outer, _, rq = DBSCAN_grid_ids(xy, eps, minPts, rtree=rt, index=idx)
+            lab, outer, _, rq = DBSCAN_grid(xy, eps, minPts, tree=rt, grid=idx)
             lemons = outer - len(np.unique(lab[lab != -1]))
-            _, _, _, rqk = DBSCAN_grid_ids(xy, eps, minPts, max_iterations=k,
-                                           rtree=rt, index=idx)
+            _, _, _, rqk = DBSCAN_grid(xy, eps, minPts, max_iterations=k,
+                                           tree=rt, grid=idx)
             out += [coarse.side / eps, 9 * coarse.side ** 2 * rho, lemons, rq, rqk]
         rows.append(out)
         print(f"  rho={rho:>4}  disc {out[1]:4.2f} | single: block {out[3]:5.2f} "

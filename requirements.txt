@@ -1,0 +1,5 @@
+numpy>=1.20
+scipy>=1.8         
+indexicon>=1.1.1    
+matplotlib          
+rtree               

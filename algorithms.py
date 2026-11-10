@@ -26,7 +26,10 @@ Two structures can be passed in, built once and reused:
          HierarchicalGridIndex serves any eps in its range; a GridSeedIndex
          serves one eps.
 
-If either is left out, the function builds one for that call.
+Usage:
+    labels, *_ = DBSCAN_indexed(xy, eps, minPts, tree=tree)                   
+    labels, *_ = DBSCAN_grid(xy, eps, minPts, max_iterations=k, tree=tree, grid=grid)
+
 """
 
 import numpy as np
@@ -330,7 +333,6 @@ def _tree_for(xy, tree):
     if tree.n != len(xy):
         raise ValueError(f"tree was built over {tree.n} points, DB has {len(xy)}")
     return tree
-
 
 def DBSCAN_indexed(DB, eps, minPts, max_iterations=None, tree=None, progress=None):
     """Baseline: ordinary DBSCAN with every range query through a tree.

@@ -3,8 +3,8 @@ test_grid_index.py
 ===================
 Checks, in order:
   1. the checker itself accepts valid labellings and rejects broken ones
-  2. the baseline (DBSCAN_indexed_ids) is valid DBSCAN
-  3. DBSCAN_grid_ids is valid DBSCAN on full runs
+  2. the baseline (DBSCAN_indexed) is valid DBSCAN
+  3. DBSCAN_grid is valid DBSCAN on full runs
   4. ... and on truncated (top-k) runs
   5. one GridSeedIndex serves several minPts values
   6. refine > 1 is still valid
@@ -14,6 +14,7 @@ Checks, in order:
  10. hierarchy: valid DBSCAN at many eps, on and between rungs
  11. hierarchy: one index serves many (eps, minPts) pairs
  12. hierarchy: mistakes are refused, not silently wrong
+ 13. Indexicon range queries return exactly the eps-neighbourhood
 
 Datasets include duplicate coordinates on purpose
 """
@@ -22,11 +23,8 @@ import numpy as np
 
 from correctness import Reference, validate
 from grid_index import GridSeedIndex, HierarchicalGridIndex, SQRT2
-from spatial_index import RTreeIndex
-try:  # once pasted into algorithms.py
-    from algorithms import DBSCAN_indexed_ids, DBSCAN_grid_ids
-except ImportError:
-    from algorithms_additions import DBSCAN_indexed_ids, DBSCAN_grid_ids
+from spatial_index import IndexiconIndex, RTreeIndex
+from algorithms import DBSCAN_indexed, DBSCAN_grid
 
 
 def make_data(n, n_clusters, seed, noise=0.7, dup_frac=0.05, buildings=5):
@@ -77,7 +75,7 @@ def main():
     xy = make_data(1500, 5, seed=11)
     eps, mp = 0.30, 5
     ref = Reference(xy, eps, mp)
-    good, _, _ = DBSCAN_indexed_ids(xy, eps, mp)
+    good, _, _ = DBSCAN_indexed(xy, eps, mp)
     check("accepts a valid labelling", validate(good, xy, eps, mp, ref=ref)[0])
 
     ids = [L for L in np.unique(good) if L != -1]
@@ -107,24 +105,24 @@ def main():
     for n, ncl, eps, mp, seed in CASES:
         xy = make_data(n, ncl, seed)
         ref = Reference(xy, eps, mp)
-        rt = RTreeIndex(xy)
+        rt = IndexiconIndex(xy)
         idx = GridSeedIndex(xy, eps)
         tag = f"(n={len(xy)} eps={eps} minPts={mp})"
 
-        lab, _, _ = DBSCAN_indexed_ids(xy, eps, mp, rtree=rt)
+        lab, _, _ = DBSCAN_indexed(xy, eps, mp, tree=rt)
         ok, probs, _ = validate(lab, xy, eps, mp, ref=ref)
         check(f"baseline full {tag}", ok, probs[:2])
 
-        lab, _, _, _ = DBSCAN_grid_ids(xy, eps, mp, rtree=rt, index=idx)
+        lab, _, _, _ = DBSCAN_grid(xy, eps, mp, tree=rt, grid=idx)
         ok, probs, _ = validate(lab, xy, eps, mp, ref=ref)
         check(f"grid full {tag}", ok, probs[:2])
 
         for k in (1, 3, 5):
-            lab, _, _ = DBSCAN_indexed_ids(xy, eps, mp, max_iterations=k, rtree=rt)
+            lab, _, _ = DBSCAN_indexed(xy, eps, mp, max_iterations=k, tree=rt)
             ok, probs, _ = validate(lab, xy, eps, mp, k=k, ref=ref)
             check(f"baseline k={k} {tag}", ok, probs[:2])
-            lab, _, _, _ = DBSCAN_grid_ids(xy, eps, mp, max_iterations=k,
-                                           rtree=rt, index=idx)
+            lab, _, _, _ = DBSCAN_grid(xy, eps, mp, max_iterations=k,
+                                           tree=rt, grid=idx)
             ok, probs, _ = validate(lab, xy, eps, mp, k=k, ref=ref)
             check(f"grid k={k} {tag}", ok, probs[:2])
 
@@ -132,10 +130,10 @@ def main():
     print("5. one index reused across minPts")
     xy = make_data(2500, 6, seed=21)
     eps = 0.30
-    rt = RTreeIndex(xy)
+    rt = IndexiconIndex(xy)
     idx = GridSeedIndex(xy, eps)            # built once
     for mp in (3, 5, 8, 12, 20):
-        lab, _, _, _ = DBSCAN_grid_ids(xy, eps, mp, rtree=rt, index=idx)
+        lab, _, _, _ = DBSCAN_grid(xy, eps, mp, tree=rt, grid=idx)
         ok, probs, _ = validate(lab, xy, eps, mp)
         check(f"minPts={mp} on shared index", ok, probs[:2])
 
@@ -144,12 +142,12 @@ def main():
     xy = make_data(2500, 6, seed=31)
     eps, mp = 0.30, 5
     ref = Reference(xy, eps, mp)
-    rt = RTreeIndex(xy)
+    rt = IndexiconIndex(xy)
     idx = GridSeedIndex(xy, eps)
     for m in (2, 4, 8):
         for k in (None, 3):
-            lab, _, _, _ = DBSCAN_grid_ids(xy, eps, mp, max_iterations=k,
-                                           rtree=rt, index=idx, refine=m)
+            lab, _, _, _ = DBSCAN_grid(xy, eps, mp, max_iterations=k,
+                                           tree=rt, grid=idx, refine=m)
             ok, probs, _ = validate(lab, xy, eps, mp, k=k, ref=ref)
             check(f"refine={m} k={k}", ok, probs[:2])
 
@@ -157,13 +155,13 @@ def main():
     print("7. identical coordinates")
     # five points at one address: core under DBSCAN, so it must be a cluster
     xy = np.array([(3.0, 3.0)] * 5 + [(20.0, 20.0), (40.0, 5.0)])
-    lab, _, _, _ = DBSCAN_grid_ids(xy, 1.0, 5)
+    lab, _, _, _ = DBSCAN_grid(xy, 1.0, 5)
     check("5 points at one address form a cluster",
           validate(lab, xy, 1.0, 5)[0] and len(set(lab[:5])) == 1 and lab[0] != -1,
           f"labels={lab.tolist()}")
     # four at one address is one short
     xy = np.array([(3.0, 3.0)] * 4 + [(20.0, 20.0)])
-    lab, _, _, _ = DBSCAN_grid_ids(xy, 1.0, 5)
+    lab, _, _, _ = DBSCAN_grid(xy, 1.0, 5)
     check("4 points at one address are noise", (lab == -1).all(), f"labels={lab.tolist()}")
 
     # 8. rung selection
@@ -253,7 +251,7 @@ def main():
     print("10. hierarchy: valid DBSCAN across eps")
     for n, ncl, mp, seed in [(1500, 5, 5, 51), (2500, 6, 8, 52), (800, 0, 5, 53)]:
         xy = make_data(n, ncl, seed)
-        rt = RTreeIndex(xy)
+        rt = IndexiconIndex(xy)
         H = HierarchicalGridIndex(xy, eps_min=0.12, eps_max=0.9)
         on_rung = [s for s in H.sides if 0.12 <= s <= 0.9]
         eps_list = sorted(set(np.round(np.geomspace(0.12, 0.9, 9), 6).tolist() + on_rung))
@@ -261,8 +259,8 @@ def main():
             ref = Reference(xy, eps, mp)
             for k in (None, 1, 3):
                 for refine in (1, 4):
-                    lab, _, _, _ = DBSCAN_grid_ids(xy, eps, mp, max_iterations=k,
-                                                   rtree=rt, index=H, refine=refine)
+                    lab, _, _, _ = DBSCAN_grid(xy, eps, mp, max_iterations=k,
+                                                   tree=rt, grid=H, refine=refine)
                     ok, probs, _ = validate(lab, xy, eps, mp, k=k, ref=ref)
                     check(f"hier n={len(xy)} eps={eps:.4g} mp={mp} k={k} refine={refine}",
                           ok, probs[:2])
@@ -270,17 +268,17 @@ def main():
     # 11. one index, many (eps, minPts)
     print("11. hierarchy: one index, many (eps, minPts)")
     xy = make_data(2500, 6, seed=61)
-    rt = RTreeIndex(xy)
+    rt = IndexiconIndex(xy)
     H = HierarchicalGridIndex(xy, eps_min=0.1, eps_max=1.0)   # built once
     for eps in (0.1, 0.17, 0.3, 0.55, 1.0):
         for mp in (3, 6, 15):
-            lab, _, _, _ = DBSCAN_grid_ids(xy, eps, mp, rtree=rt, index=H)
+            lab, _, _, _ = DBSCAN_grid(xy, eps, mp, tree=rt, grid=H)
             ok, probs, _ = validate(lab, xy, eps, mp)
             check(f"shared index eps={eps} minPts={mp}", ok, probs[:2])
     # matches the single-eps index on the same query (same clusters)
     for eps in (0.17, 0.3):
-        a, _, _, _ = DBSCAN_grid_ids(xy, eps, 5, rtree=rt, index=H)
-        b, _, _, _ = DBSCAN_grid_ids(xy, eps, 5, rtree=rt, index=GridSeedIndex(xy, eps))
+        a, _, _, _ = DBSCAN_grid(xy, eps, 5, tree=rt, grid=H)
+        b, _, _, _ = DBSCAN_grid(xy, eps, 5, tree=rt, grid=GridSeedIndex(xy, eps))
         ref = Reference(xy, eps, 5)
         same = validate(a, xy, eps, 5, ref=ref)[0] and validate(b, xy, eps, 5, ref=ref)[0] \
             and np.array_equal(a == -1, b == -1)
@@ -294,23 +292,23 @@ def main():
     check("eps_range covers what was asked for", lo <= 0.2 and hi >= 0.6, (lo, hi))
     for ok_eps in (0.2, 0.6, hi):
         try:
-            DBSCAN_grid_ids(xy, ok_eps, 5, index=H)
+            DBSCAN_grid(xy, ok_eps, 5, grid=H)
             check(f"eps={ok_eps:.6g} inside range accepted", True)
         except ValueError as e:
             check(f"eps={ok_eps:.6g} inside range accepted", False, str(e))
     for bad_eps in (0.1, 0.19, hi * 1.001, 2 * hi):
         try:
-            DBSCAN_grid_ids(xy, bad_eps, 5, index=H)
+            DBSCAN_grid(xy, bad_eps, 5, grid=H)
             check(f"eps={bad_eps} outside range refused", False)
         except ValueError:
             check(f"eps={bad_eps} outside range refused", True)
     try:
-        DBSCAN_grid_ids(xy, 0.3, 5, index=GridSeedIndex(xy, 0.4))
+        DBSCAN_grid(xy, 0.3, 5, grid=GridSeedIndex(xy, 0.4))
         check("single-eps index refuses another eps", False)
     except ValueError:
         check("single-eps index refuses another eps", True)
     try:
-        DBSCAN_grid_ids(xy[:500], 0.3, 5, index=H)
+        DBSCAN_grid(xy[:500], 0.3, 5, grid=H)
         check("index over different points refused", False)
     except ValueError:
         check("index over different points refused", True)
@@ -323,9 +321,56 @@ def main():
     # stacked duplicates through the hierarchy
     xy = np.array([(3.0, 3.0)] * 5 + [(20.0, 20.0), (40.0, 5.0)])
     H = HierarchicalGridIndex(xy, eps_min=0.5, eps_max=2.0)
-    lab, _, _, _ = DBSCAN_grid_ids(xy, 1.0, 5, index=H)
+    lab, _, _, _ = DBSCAN_grid(xy, 1.0, 5, grid=H)
     check("hierarchy: 5 points at one address form a cluster",
           lab[0] != -1 and len(set(lab[:5])) == 1, f"labels={lab.tolist()}")
+
+    # 13. Indexicon range queries
+    print("13. Indexicon range queries are exact; R-tree is the default")
+    rng = np.random.default_rng(81)
+    xy = make_data(3000, 5, seed=81, dup_frac=0.1, buildings=20)
+    # points at exactly eps along an axis, and just past it
+    xy = np.vstack([xy, [[10.0, 10.0], [10.3, 10.0], [10.0, 10.3],
+                         [10.3 + 1e-9, 10.0], [9.7, 10.0], [10.0, 9.7]]])
+    for kind in ("kdtree", "rtree"):
+        sp = IndexiconIndex(xy, kind=kind)
+        bad = 0
+        for i in list(rng.choice(len(xy), 400, replace=False)) + list(range(len(xy) - 6, len(xy))):
+            for eps in (0.05, 0.3, 1.0):
+                d = xy - xy[i]
+                truth = set(np.flatnonzero(d[:, 0] ** 2 + d[:, 1] ** 2 <= eps * eps).tolist())
+                if set(sp.neighbors_of(i, eps)) != truth:
+                    bad += 1
+        check(f"{kind}: neighbors_of matches brute force (incl. duplicates, exact-eps edges)",
+              bad == 0, f"{bad} mismatches")
+    edge = len(xy) - 6
+    nb = set(IndexiconIndex(xy).neighbors_of(edge, 0.3))
+    check("point at exactly eps is a neighbour", {edge + 1, edge + 2} <= nb or
+          # 10.3-10.0 may not be exactly 0.3 in floating point; then brute force decides
+          set(np.flatnonzero(((xy - xy[edge]) ** 2).sum(1) <= 0.09).tolist()) == nb, nb)
+    # both backends give valid DBSCAN with identical noise
+    xy = make_data(2000, 5, seed=82)
+    eps, mp = 0.3, 5
+    ref = Reference(xy, eps, mp)
+    la, _, ra = DBSCAN_indexed(xy, eps, mp, tree=IndexiconIndex(xy))
+    lb, _, rb = DBSCAN_indexed(xy, eps, mp, tree=RTreeIndex(xy))
+    check("baseline valid with Indexicon", validate(la, xy, eps, mp, ref=ref)[0])
+    check("baseline valid with libspatialindex", validate(lb, xy, eps, mp, ref=ref)[0])
+    check("both backends: same noise, same range-query count",
+          np.array_equal(la == -1, lb == -1) and ra == rb, (ra, rb))
+    check("default tree is the R-tree", IndexiconIndex(xy).kind == "rtree")
+    lab, *_ = DBSCAN_grid(xy, eps, mp, tree=IndexiconIndex(xy, kind="kdtree"))
+    check("KD-tree also works", validate(lab, xy, eps, mp, ref=ref)[0])
+    try:
+        DBSCAN_grid(xy, eps, mp, rtree=IndexiconIndex(xy))
+        check("old rtree= keyword is gone", False)
+    except TypeError:
+        check("old rtree= keyword is gone", True)
+    try:
+        DBSCAN_grid(xy, eps, mp, tree=IndexiconIndex(xy[:100]))
+        check("spatial index over different points refused", False)
+    except ValueError:
+        check("spatial index over different points refused", True)
 
     print(f"\n{passed} passed, {failed} failed")
     raise SystemExit(1 if failed else 0)

@@ -5,7 +5,7 @@ Spatial indexes that answer DBSCAN's eps-range queries.
 
   IndexiconIndex   Default. Backed by Indexicon (Simatis, Bouros, Mamoulis,
                    SIGSPATIAL 2026), a header-only C++ library with Python
-                   bindings: pip install indexicon. Uses KD-tree by default 
+                   bindings: pip install indexicon. Uses rtree by default 
                    or r-trees. Memory about 40 bytes per point
 
   RTreeIndex       A libspatialindex wrapper. Kept for backward compatibility.
@@ -34,7 +34,7 @@ class IndexiconIndex:
     kind : "kdtree" (default) or "rtree". Identical results but kdtree is slightly faster
     """
 
-    def __init__(self, xy, kind="kdtree"):
+    def __init__(self, xy, kind="rtree"):
         import indexicon  # imported here so RTreeIndex works without it
 
         xy = np.ascontiguousarray(xy, dtype=np.float64)
