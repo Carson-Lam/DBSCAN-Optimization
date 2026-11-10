@@ -107,6 +107,13 @@ Results:
     the Hierarchical index costs less build time than you would need to build three 
     single-ε indexes individually.
 
+- On 160,000 points (top-k):
+n	full indexed DBSCAN	our top-3	speedup	our index build
+10,000	0.38 s, 10,000 queries	0.13 s, 944 queries	3×	0.02 s
+40,000	1.05 s, 40,000 queries	0.14 s, 947 queries	7×	0.05 s
+80,000	1.94 s, 80,000 queries	0.14 s, 980 queries	14×	0.08 s
+160,000	3.98 s, 160,000 queries	0.19 s, 939 queries	21×	0.20 s
+
 - 30M points: 174 s build, 2.9 GB index, 5.4 GB peak.
 
 - Correctness is generally correctness
@@ -121,7 +128,7 @@ Causes:
     - The block is much bigger than a ε-neighbourhood. 3x3 block: 3ε × 3ε = 9ε² vs ε-disc: πε² ≈ 3.1ε²
     - A point marked noise still counts towards neighbour's ε-neighborhoods. We can't subtract it
     - The denser the noise, the more blocks pass minPts by chance, leading to that case, and leading   
-        to more points geteting checked one at a time.
+        to more points getting checked one at a time.
 
 2. When ε sits right above a Hierarchical rung, the coarse grid (smallest grid more than ε) 
 is up to 2x too big. For sparse noise that means a lot of individually checked noise points.
@@ -129,3 +136,32 @@ is up to 2x too big. For sparse noise that means a lot of individually checked n
 Conclusions from problems:
 - The full-run speedup only happens when the noise is sparse. Worst case is still same as DBSCAN,
 so algorithhm should still be faster. Building the grid can be overhead.
+
+10/11/26:
+- Pivoted to IndexiconIndex over libspatialindex r-trees:
+    - Less memory
+    - faster
+    - Ready to run on 30m points
+
+    This is reflected in algorithms.py with a new param for DBSCAN_indexed_ids 
+    and DBSCAN_grid_ids
+
+- Cleaned up algorithms.py:
+    - Removed 10/24 buggy versions: DBSCAN_indexed and DBSCAN_grid 
+    versions identified a point by it's coordinates (labels[tuple(p)]) 
+    so two points at the same coordinate are counted as one point. 
+    DBSCAN_indexed_ids and DBSCAN_grid_ids are now the main versions and 
+    renamed to just DBSCAN_indexed and DBSCAN_grid.
+
+    - Removed a bunch of legacy functions from the old paper/very early dev:
+     DBSCAN
+     RangeQuery
+     euclidean_distance
+     DBSCAN_Optimized
+     maxrs_sweepline_LP
+     DBSCAN_indexed
+     DBSCAN_Optimized_indexed
+     DBSCAN_grid
+
+     - Algorithms now only has three functions: DBSCAN_indexed, DBSCAN_grid, and DBSCAN_single_maxrs
+
