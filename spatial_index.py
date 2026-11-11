@@ -31,8 +31,19 @@ class IndexiconIndex:
     ----------
     xy : (n, 2) array of coordinates, in a planar unit (e.g. km). 
 
-    kind : "kdtree" (default) or "rtree". Identical results but kdtree is slightly faster
+    kind : which Indexicon structure answers the box queries. All give
+        identical results; only speed and memory differ.
+          "rtree"                      R-tree (default)
+          "kdtree"                     KD-tree, longest-axis splits
+          "kdtree:adaptive"            KD-tree, split on widest data spread
+          "kdtree:round_robin"         KD-tree, alternate x / y
+          "quadtree"                   Quad-tree, point-region (midpoint) splits
+          "quadtree:pseudo_median"     Quad-tree, independent axis medians
+          "quadtree:longest_axis"      Quad-tree, median of the widest span
     """
+
+    KINDS = ("rtree", "kdtree", "kdtree:adaptive", "kdtree:round_robin",
+             "quadtree", "quadtree:pseudo_median", "quadtree:longest_axis")
 
     def __init__(self, xy, kind="rtree"):
         import indexicon  # imported here so RTreeIndex works without it
@@ -43,12 +54,15 @@ class IndexiconIndex:
         self.xy = xy
         self.n = len(xy)
         self.kind = kind
-        if kind == "kdtree":
-            self.tree = indexicon.KDTree(dims=2)
-        elif kind == "rtree":
+        base, _, split = kind.partition(":")
+        if kind not in self.KINDS:
+            raise ValueError(f"kind must be one of {self.KINDS}")
+        if base == "rtree":
             self.tree = indexicon.RTree(data="point", dims=2)
+        elif base == "kdtree":
+            self.tree = indexicon.KDTree(dims=2, split=split or "longest_axis")
         else:
-            raise ValueError('kind must be "kdtree" or "rtree"')
+            self.tree = indexicon.QuadTree(split=split or "pr")
         if self.n:
             self.tree.bulk_load(xy)          # ids default to 0..n-1
         # reused query-box buffers: avoids two array allocations per query

@@ -184,3 +184,7 @@ so algorithhm should still be faster. Building the grid can be overhead.
 - Experiments we want:
     - World dataset map (Hierarchal Grid vs Indexed vanilla)
     - Rest in slack
+
+11/11/26 (2):
+- Made testing suite (experiments_poi.py)
+- Fixed buggy single scan MaxRS in algorithms.py 
