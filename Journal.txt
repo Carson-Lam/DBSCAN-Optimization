@@ -172,3 +172,11 @@ so algorithhm should still be faster. Building the grid can be overhead.
         index cost, price of reuse, noise density
     
     - test_grid_index that lists dbscan correctness
+
+11/11/26:
+
+- Added script that runs World_POI_trigrams_0.5 dataset
+
+- Defaults: ε = 0.1 km, minPts = 20, k = 1, 3, 5, 10, 25, 100
+
+- --grid-full runs full algorithm with no base limit
