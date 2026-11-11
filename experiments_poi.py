@@ -34,6 +34,15 @@ Usage
   # 3) long run on all data points
   python run_world_poi.py World_POI_trigrams_0.5.csv --eps 0.1 --minpts 20
 
+  # 4) paper figures 5, 6, 7 and the index table (the default --exp).
+  python experiments_poi.py World_POI_trigrams_0.5.csv --eps 0.1 --minpts 20 --tag paper
+  #    resume after a crash: the same command (same --tag) skips finished rows
+  #    redraw figures only:  python experiments_poi.py X.csv --tag paper --plot-only
+
+  Figure outputs (same folder): fig5_scaling.{csv,png,pdf},
+  fig6_topk_quality.{csv,png,pdf}, fig7_topk_map.{png,pdf} + fig7_clusters.csv,
+  table_indexes.{csv,md,tex}
+
 Everything is written to results/world_poi/<tag>/ :
   run.log        
   summary.json    settings, dataset stats, index costs, baseline status
@@ -73,7 +82,7 @@ from pathlib import Path
 
 import numpy as np
 
-from algorithms import DBSCAN_grid, DBSCAN_indexed
+from algorithms import DBSCAN_grid, DBSCAN_indexed, DBSCAN_single_maxrs
 from grid_index import HierarchicalGridIndex
 from spatial_index import IndexiconIndex
 
@@ -249,15 +258,24 @@ def load_points(args, log):
         np.savez(cache, lat=lat, lon=lon, stats=json.dumps(stats))
         log(f"cached to {cache}")
 
+    if not args.keep_file_order:
+        # The file is grouped by country, so vanilla DBSCAN (which visits
+        # points in input order) would find its first clusters wherever the
+        # file starts. A fixed random order removes that artefact, and the
+        # first n points of it are the n-point sample used in every experiment
+        # (so the samples are nested: 1K inside 10K inside 100K ...).
+        perm = np.random.default_rng(0).permutation(len(lat))
+        lat, lon = lat[perm], lon[perm]
+        log("points shuffled (seed 0)")
+
     if args.bbox:
         x0, y0, x1, y1 = args.bbox
         m = (lon >= x0) & (lon <= x1) & (lat >= y0) & (lat <= y1)
         lat, lon = lat[m], lon[m]
         log(f"bbox {args.bbox}: {len(lat):,} points")
     if args.sample and args.sample < len(lat):
-        pick = np.sort(np.random.default_rng(0).choice(len(lat), args.sample, replace=False))
-        lat, lon = lat[pick], lon[pick]
-        log(f"random sample of {len(lat):,} points (seed 0)")
+        lat, lon = lat[:args.sample], lon[:args.sample]
+        log(f"first {len(lat):,} points of the shuffled order")
     if len(lat) == 0:
         sys.exit("No points left after filtering.")
 
@@ -276,7 +294,7 @@ def load_points(args, log):
             f"{args.zone_width}j deg; {near:,} points ({100 * near / len(xy):.3f}%) "
             f"are within {margin} km of a zone edge")
     stats.update(points_used=int(len(xy)), projection=proj)
-    return np.ascontiguousarray(xy), stats
+    return np.ascontiguousarray(xy), stats, lat, lon
 
 
 # ---------------------------------------------------------------------------
@@ -376,7 +394,36 @@ def parse_args():
                         "(default: no limit)")
     p.add_argument("--grid-full", action="store_true",
                    help="also run DBSCAN_grid with no k limit (as slow as the baseline)")
-    p.add_argument("--tag", help="name of the results folder (default: timestamp)")
+    p.add_argument("--exp", nargs="*", default=["fig5", "fig6", "fig7", "table"],
+                   choices=["fig5", "fig6", "fig7", "table", "check"],
+                   help="experiments to run, in this order (default: fig5 fig6 "
+                        "fig7 table). 'check' is the top-k exactness/fidelity run.")
+    p.add_argument("--sizes", type=int, nargs="+",
+                   default=[1_000, 10_000, 100_000, 1_000_000, 0],
+                   help="point counts for fig5 and the table; 0 = all points")
+    p.add_argument("--fig-k", type=int, default=3,
+                   help="k for fig5, fig7 and the table (default 3)")
+    p.add_argument("--fig6-kmax", type=int, default=20,
+                   help="fig6 x-axis runs k = 1..this (default 20)")
+    p.add_argument("--fig6-n", type=int, default=0, help="points for fig6 (0 = all)")
+    p.add_argument("--fig7-n", type=int, default=0, help="points for fig7 (0 = all)")
+    p.add_argument("--fig-refine", type=int, default=1,
+                   help="refine setting of Grid-DBSCAN in the figures (default 1)")
+    p.add_argument("--no-maxrs", action="store_true",
+                   help="leave single-run MaxRS out of fig5 and fig6")
+    p.add_argument("--indexes", nargs="+", default=list(IndexiconIndex.KINDS),
+                   choices=list(IndexiconIndex.KINDS),
+                   help="Indexicon structures for the table (default: all 7)")
+    p.add_argument("--repeats", type=int, default=3,
+                   help="timing repeats for runs under 1M points; the median is "
+                        "reported (default 3)")
+    p.add_argument("--keep-file-order", action="store_true",
+                   help="do not shuffle the points (vanilla then visits them "
+                        "in file order, which is grouped by country)")
+    p.add_argument("--plot-only", action="store_true",
+                   help="only redraw the figures from the CSVs in --tag's folder")
+    p.add_argument("--tag", help="name of the results folder (default: timestamp). "
+                        "Re-using a tag resumes: finished measurements are skipped")
     p.add_argument("--out", default="results/world_poi")
     p.add_argument("--cache-dir", default="cache")
     return p.parse_args()
@@ -395,6 +442,9 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     log = Log(out / "run.log")
     log(f"run {tag}: {' '.join(sys.argv)}")
+    if args.plot_only:
+        make_plots(out, log)
+        return
 
     summary = {"tag": tag, "argv": sys.argv, "settings": vars(args)}
     def save_summary():
@@ -402,7 +452,7 @@ def main():
 
     # 1-2. points
     t0 = time.time()
-    xy, summary["data"] = load_points(args, log)
+    xy, summary["data"], lat, lon = load_points(args, log)
     n = len(xy)
     log(f"{n:,} points ready in {time.time() - t0:.0f}s, extent "
         f"{np.ptp(xy[:, 0]):,.0f} x {np.ptp(xy[:, 1]):,.0f} km, {rss_gb():.1f} GB")
@@ -410,6 +460,25 @@ def main():
     if args.probe:
         probe(xy, sorted(set(args.eps) | {0.05, 0.1, 0.2, 0.5}), log)
         return
+
+    for exp in args.exp:
+        log(f"===== experiment: {exp} =====")
+        if exp == "check":
+            check_experiment(args, xy, log, out, summary, save_summary)
+        else:
+            EXPERIMENTS[exp](args, xy, lat, lon, log, out)
+    if "fig5" in args.exp:
+        log("===== fig5: full vanilla runs (slowest, last) =====")
+        fig5_full(args, xy, log, out)
+    if args.exp:
+        make_plots(out, log)
+    log("done.")
+
+
+def check_experiment(args, xy, log, out, summary, save_summary):
+    """Top-k exactness and fidelity against the full baseline (the original
+    run of this script)."""
+    n = len(xy)
 
     # 3. indexes
     t0 = time.time()
@@ -544,7 +613,526 @@ def main():
             topk_fields.append("speedup_vs_baseline")
         save_topk()
 
-    log("done.")
+    log("check: done.")
+
+# ===========================================================================================
+# ===========================================================================================
+# ===========================================================================================
+
+# Paper figures: fig5 (scaling), fig6 (top-k quality), fig7 (top-k map),
+# table (Grid-DBSCAN with each Indexicon index)
+
+# Names and styles in the plots. Change labels here to rename methods.
+STYLE = {
+    "vanilla_full":         dict(label="Vanilla DBSCAN + index (full run)",
+                                 color="#2196F3", marker="o", ls="-"),
+    "vanilla_full_largest": dict(label="Vanilla DBSCAN + index (full run, k largest)",
+                                 color="#2196F3", marker="o", ls="-"),
+    "vanilla_topk":         dict(label="Vanilla DBSCAN + index (stopped at k)",
+                                 color="#9C27B0", marker="s", ls="--"),
+    "maxrs_topk":           dict(label="MaxRS single-run (stopped at k)",
+                                 color="#2E7D32", marker="D", ls=":"),
+    "grid_topk":            dict(label="Grid-DBSCAN (stopped at k)",
+                                 color="#FF5722", marker="^", ls="-"),
+}
+
+
+class Rows:
+    """A CSV of results that is appended to row by row, so a crash loses at
+    most the measurement in progress. Re-running with the same --tag skips
+    rows that are already there."""
+
+    def __init__(self, path, fields):
+        self.path, self.fields = Path(path), fields
+        self.rows = []
+        if self.path.exists():
+            with open(self.path, newline="") as f:
+                self.rows = list(csv.DictReader(f))
+        else:
+            with open(self.path, "w", newline="") as f:
+                csv.DictWriter(f, fieldnames=fields).writeheader()
+
+    def has(self, **key):
+        return any(all(str(r.get(k)) == str(v) for k, v in key.items()) for r in self.rows)
+
+    def add(self, **row):
+        with open(self.path, "a", newline="") as f:
+            csv.DictWriter(f, fieldnames=self.fields, extrasaction="ignore").writerow(row)
+        self.rows.append({k: str(v) for k, v in row.items()})
+
+
+def _sizes(args, n_all):
+    return sorted({n_all if s == 0 or s > n_all else s for s in args.sizes})
+
+
+def _fmt_n(n):
+    n = int(n)
+    if n >= 1_000_000:
+        return f"{n / 1e6:.1f}M".replace(".0M", "M")
+    if n >= 1_000:
+        return f"{n / 1e3:.0f}K"
+    return str(n)
+
+
+def _run(method, xy, eps, minPts, k, tree, grid, refine):
+    """One run. Returns (labels, seconds, range_queries)."""
+    t0 = time.perf_counter()
+    if method == "grid_topk":
+        lab, _, _, rq = DBSCAN_grid(xy, eps, minPts, max_iterations=k, tree=tree,
+                                  grid=grid, refine=refine)
+    elif method == "vanilla_topk":
+        lab, _, rq = DBSCAN_indexed(xy, eps, minPts, max_iterations=k, tree=tree)
+    elif method == "maxrs_topk":
+        lab, _, _, rq = DBSCAN_single_maxrs(xy, eps, minPts, max_iterations=k, tree=tree)
+    else:
+        raise ValueError(method)
+    return lab, time.perf_counter() - t0, rq
+
+
+def _timed(method, xy, eps, minPts, k, tree, grid, refine, repeats):
+    """Median time over `repeats` runs (1 run from 1M points up)."""
+    reps = repeats if len(xy) < 1_000_000 else 1
+    times = []
+    for _ in range(max(reps, 1)):
+        lab, dt, rq = _run(method, xy, eps, minPts, k, tree, grid, refine)
+        times.append(dt)
+    return lab, float(np.median(times)), rq
+
+
+def _eps(args, log):
+    if len(args.eps) > 1:
+        log(f"figures use the first eps only ({args.eps[0]})")
+    return args.eps[0]
+
+
+def _build(xy, eps, log, kind="rtree"):
+    t0 = time.perf_counter()
+    tree = IndexiconIndex(xy, kind=kind)
+    t_tree = time.perf_counter() - t0
+    t0 = time.perf_counter()
+    grid = HierarchicalGridIndex(xy, eps_min=eps, eps_max=eps)
+    t_grid = time.perf_counter() - t0
+    log(f"  n={len(xy):,}: {kind} {t_tree:.2f}s, grid {t_grid:.2f}s, {rss_gb():.1f} GB")
+    return tree, grid, t_tree, t_grid
+
+
+# ---------------------------------------------------------------------------
+# Figure 5: runtime and range queries vs. number of points
+# ---------------------------------------------------------------------------
+FIG5_FIELDS = ["n", "method", "k", "seconds", "range_queries", "clusters",
+               "finished", "note"]
+
+
+def fig5_experiment(args, xy, lat, lon, log, out):
+    """The fast methods at every size. The full vanilla runs come last
+    (fig5_full), after every other experiment, because they can take a day."""
+    eps, m, k = _eps(args, log), args.minpts, args.fig_k
+    rows = Rows(out / "fig5_scaling.csv", FIG5_FIELDS)
+    methods = ["grid_topk", "vanilla_topk"] + ([] if args.no_maxrs else ["maxrs_topk"])
+    for n in _sizes(args, len(xy)):
+        todo = [mt for mt in methods + ["build_rtree", "build_grid"]
+                if not rows.has(n=n, method=mt)]
+        if not todo:
+            continue
+        sub = xy[:n]
+        tree, grid, t_tree, t_grid = _build(sub, eps, log)
+        if "build_rtree" in todo:
+            rows.add(n=n, method="build_rtree", seconds=t_tree, finished=True)
+        if "build_grid" in todo:
+            rows.add(n=n, method="build_grid", seconds=t_grid, finished=True)
+        for mt in methods:
+            if mt not in todo:
+                continue
+            lab, dt, rq = _timed(mt, sub, eps, m, k, tree, grid, args.fig_refine, args.repeats)
+            rows.add(n=n, method=mt, k=k, seconds=dt, range_queries=rq,
+                     clusters=int(lab.max()), finished=True)
+            log(f"  fig5 n={n:,} {mt}: {dt:.3f}s, {rq:,} range queries")
+        del tree, grid
+    make_plots(out, log)
+
+
+def fig5_full(args, xy, log, out):
+    """Full vanilla DBSCAN at every size, smallest first. No time limit unless
+    --baseline-hours; a stopped run is recorded as did-not-finish (DNF)."""
+    eps, m = _eps(args, log), args.minpts
+    rows = Rows(out / "fig5_scaling.csv", FIG5_FIELDS)
+    (out / "labels").mkdir(exist_ok=True)
+    for n in _sizes(args, len(xy)):
+        if rows.has(n=n, method="vanilla_full"):
+            continue
+        sub = xy[:n]
+        tree = IndexiconIndex(sub)
+        state = {"t0": time.perf_counter(), "last": 0.0, "rq": 0, "el": 0.0}
+
+        def progress(done, total, clusters, rq):
+            el = time.perf_counter() - state["t0"]
+            state.update(rq=rq, el=el, clusters=clusters)
+            if done and el - state["last"] >= 60:
+                state["last"] = el
+                log(f"  vanilla full n={n:,}: {100 * done / total:5.1f}% of points, "
+                    f"{rq:,} range queries, {hms(el)} elapsed, "
+                    f"ETA ~{hms(el / max(rq, 1) * (total - rq))}, {rss_gb():.1f} GB")
+            if args.baseline_hours and el > args.baseline_hours * 3600:
+                raise _OutOfTime
+
+        log(f"  vanilla full n={n:,}: started")
+        try:
+            lab, _, rq = DBSCAN_indexed(sub, eps, m, tree=tree, progress=progress)
+        except (_OutOfTime, KeyboardInterrupt) as e:
+            rows.add(n=n, method="vanilla_full", seconds=state["el"],
+                     range_queries=state["rq"], finished=False, note=type(e).__name__)
+            log(f"  vanilla full n={n:,}: DID NOT FINISH after {hms(state['el'])}")
+            break                      # larger n would not finish either
+        dt = time.perf_counter() - state["t0"]
+        rows.add(n=n, method="vanilla_full", seconds=dt, range_queries=rq,
+                 clusters=int(lab.max()), finished=True)
+        log(f"  vanilla full n={n:,}: {hms(dt)}, {rq:,} range queries, "
+            f"{int(lab.max()):,} clusters")
+        np.save(out / "labels" / f"vanilla_full_n{n}.npy", lab.astype(np.int32))
+        _add_hindsight_to_fig6(lab, n, out)
+        make_plots(out, log)
+
+
+# ---------------------------------------------------------------------------
+# Figure 6: total points in the first k clusters vs. k
+# ---------------------------------------------------------------------------
+FIG6_FIELDS = ["n", "method", "k", "points_in_top_k", "cluster_size", "seconds"]
+
+
+def _cluster_sizes(lab):
+    """Sizes of clusters 1..C, in the order they were found."""
+    if lab.max() < 1:
+        return np.zeros(0, dtype=np.int64)
+    return np.bincount(lab[lab > 0], minlength=int(lab.max()) + 1)[1:]
+
+
+def fig6_experiment(args, xy, lat, lon, log, out):
+    """One run per method with k = kmax. A run stopped at k finds exactly the
+    first k clusters of this run (checked in testing), so one run gives the
+    whole curve."""
+    eps, m, K = _eps(args, log), args.minpts, args.fig6_kmax
+    n = len(xy) if args.fig6_n in (0, None) or args.fig6_n > len(xy) else args.fig6_n
+    rows = Rows(out / "fig6_topk_quality.csv", FIG6_FIELDS)
+    methods = ["vanilla_topk", "grid_topk"] + ([] if args.no_maxrs else ["maxrs_topk"])
+    todo = [mt for mt in methods if not rows.has(n=n, method=mt)]
+    (out / "labels").mkdir(exist_ok=True)
+    if todo:
+        sub = xy[:n]
+        tree, grid, _, _ = _build(sub, eps, log)
+        for mt in todo:
+            lab, dt, _ = _run(mt, sub, eps, m, K, tree, grid, args.fig_refine)
+            np.save(out / "labels" / f"fig6_{mt}_n{n}.npy", lab.astype(np.int32))
+            sizes = _cluster_sizes(lab)
+            for kk, (s, c) in enumerate(zip(sizes, np.cumsum(sizes)), start=1):
+                rows.add(n=n, method=mt, k=kk, points_in_top_k=int(c),
+                         cluster_size=int(s), seconds=dt)
+            log(f"  fig6 n={n:,} {mt}: {len(sizes)} clusters in {dt:.2f}s, "
+                f"sizes {sizes[:10].tolist()}")
+        del tree, grid
+    full = out / "labels" / f"vanilla_full_n{n}.npy"
+    if full.exists():
+        _add_hindsight_to_fig6(np.load(full), n, out)
+    make_plots(out, log)
+
+
+def _add_hindsight_to_fig6(lab, n, out):
+    """The k largest clusters of a full run: what a top-k could get at best,
+    known only after clustering everything."""
+    path = out / "fig6_topk_quality.csv"
+    if not path.exists():
+        return
+    rows = Rows(path, FIG6_FIELDS)
+    if not rows.has(n=n) or rows.has(n=n, method="vanilla_full_largest"):
+        return
+    kmax = max(int(r["k"]) for r in rows.rows if str(r["n"]) == str(n))
+    sizes = np.sort(_cluster_sizes(lab))[::-1][:kmax]
+    for kk, (s, c) in enumerate(zip(sizes, np.cumsum(sizes)), start=1):
+        rows.add(n=n, method="vanilla_full_largest", k=kk,
+                 points_in_top_k=int(c), cluster_size=int(s))
+
+
+# ---------------------------------------------------------------------------
+# Figure 7: the top-k clusters on a map, vanilla vs. grid
+# ---------------------------------------------------------------------------
+def fig7_experiment(args, xy, lat, lon, log, out):
+    eps, m, k = _eps(args, log), args.minpts, args.fig_k
+    n = len(xy) if args.fig7_n in (0, None) or args.fig7_n > len(xy) else args.fig7_n
+    labels = {}
+    for mt in ("vanilla_topk", "grid_topk"):
+        f6 = out / "labels" / f"fig6_{mt}_n{n}.npy"
+        if f6.exists() and args.fig6_kmax >= k:     # first k clusters of the fig6 run
+            lab = np.load(f6).astype(np.int64)
+            lab[lab > k] = -1
+            labels[mt] = lab
+    if len(labels) < 2:
+        tree, grid, _, _ = _build(xy[:n], eps, log)
+        for mt in ("vanilla_topk", "grid_topk"):
+            labels[mt], dt, _ = _run(mt, xy[:n], eps, m, k, tree, grid, args.fig_refine)
+            log(f"  fig7 {mt}: {dt:.2f}s")
+        del tree, grid
+
+    # Save only what the plot needs (a few MB), so it can be redrawn with
+    # --plot-only without the 8.6M points.
+    la, lo = lat[:n], lon[:n]
+    rng = np.random.default_rng(0)
+    bg = rng.choice(n, min(n, 300_000), replace=False)
+    data = {"k": k, "n": n, "eps": eps, "minPts": m,
+            "bg_lat": la[bg], "bg_lon": lo[bg]}
+    rows = []
+    for mt, lab in labels.items():
+        for c in range(1, k + 1):
+            idx = np.flatnonzero(lab == c)
+            if len(idx) == 0:
+                continue
+            clat, clon = la[idx], lo[idx]
+            pad = max(0.3 * max(np.ptp(clat), np.ptp(clon)), 0.01)
+            box = (clon.min() - pad, clat.min() - pad, clon.max() + pad, clat.max() + pad)
+            near = np.flatnonzero((lo >= box[0]) & (lo <= box[2]) &
+                                  (la >= box[1]) & (la <= box[3]))
+            data[f"{mt}_{c}_lat"], data[f"{mt}_{c}_lon"] = clat, clon
+            data[f"{mt}_{c}_near_lat"], data[f"{mt}_{c}_near_lon"] = la[near], lo[near]
+            rows.append([mt, c, len(idx), float(np.mean(clat)), float(np.mean(clon))])
+    np.savez_compressed(out / "fig7_data.npz", **data)
+    with open(out / "fig7_clusters.csv", "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["method", "cluster", "size", "centroid_lat", "centroid_lon"])
+        w.writerows(rows)
+    log(f"  fig7 clusters: {rows}")
+    make_plots(out, log)
+
+
+# ---------------------------------------------------------------------------
+# Table: Grid-DBSCAN top-k with each Indexicon index
+# ---------------------------------------------------------------------------
+TABLE_FIELDS = ["index", "n", "build_seconds", "grid_topk_seconds",
+                "range_queries", "box_query_us", "index_mb"]
+
+
+def _box_query_us(tree, xy, eps, n_q=100_000):
+    """Index-only speed: mean microseconds per eps box query, over the same
+    random points for every index. Grid-DBSCAN's run time also includes
+    Python work per query that is the same for every index; this column
+    isolates the part the index is responsible for."""
+    pts = xy[np.random.default_rng(1).choice(len(xy), min(n_q, len(xy)), replace=False)]
+    lo, hi = pts - eps, pts + eps
+    q = tree.tree.query
+    t0 = time.perf_counter()
+    for i in range(len(pts)):
+        q(lo[i], hi[i])
+    return (time.perf_counter() - t0) / len(pts) * 1e6
+
+
+def table_experiment(args, xy, lat, lon, log, out):
+    eps, m, k = _eps(args, log), args.minpts, args.fig_k
+    rows = Rows(out / "table_indexes.csv", TABLE_FIELDS)
+    for n in _sizes(args, len(xy)):
+        todo = [kind for kind in args.indexes if not rows.has(index=kind, n=n)]
+        if not todo:
+            continue
+        sub = xy[:n]
+        grid = HierarchicalGridIndex(sub, eps_min=eps, eps_max=eps)   # shared
+        for kind in todo:
+            t0 = time.perf_counter()
+            tree = IndexiconIndex(sub, kind=kind)
+            tb = time.perf_counter() - t0
+            _, dt, rq = _timed("grid_topk", sub, eps, m, k, tree, grid,
+                               args.fig_refine, args.repeats)
+            us = _box_query_us(tree, sub, eps)
+            rows.add(index=kind, n=n, build_seconds=tb, grid_topk_seconds=dt,
+                     range_queries=rq, box_query_us=us,
+                     index_mb=tree.nbytes() / 2**20)
+            log(f"  table n={n:,} {kind}: build {tb:.2f}s, grid top-{k} {dt:.3f}s, "
+                f"{rq:,} range queries, {us:.1f} us per box query")
+            del tree
+        del grid
+    make_plots(out, log)
+
+
+EXPERIMENTS = {"fig5": fig5_experiment, "fig6": fig6_experiment,
+               "fig7": fig7_experiment, "table": table_experiment}
+
+
+# ---------------------------------------------------------------------------
+# Plotting (reads only the files in the results folder)
+# ---------------------------------------------------------------------------
+def make_plots(out, log):
+    for name, fn in (("fig5", _plot_fig5), ("fig6", _plot_fig6),
+                     ("fig7", _plot_fig7), ("table", _write_table)):
+        try:
+            fn(Path(out))
+        except FileNotFoundError:
+            pass
+        except Exception as e:                   # a plot bug must not kill a long run
+            log(f"  plotting {name} failed: {type(e).__name__}: {e}")
+
+
+def _read(path):
+    with open(path, newline="") as f:
+        return list(csv.DictReader(f))
+
+
+def _save(fig, out, name):
+    fig.savefig(out / f"{name}.png", dpi=200, bbox_inches="tight")
+    fig.savefig(out / f"{name}.pdf", bbox_inches="tight")
+
+
+def _plot_fig5(out):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    rows = _read(out / "fig5_scaling.csv")
+    k = next((r["k"] for r in rows if r["k"]), "?")
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
+    all_n = sorted({int(r["n"]) for r in rows})
+    for col, (ax, title) in enumerate(zip(
+            axes, ["Runtime vs. dataset size", "Range queries vs. dataset size"])):
+        for mt in ("vanilla_full", "vanilla_topk", "maxrs_topk", "grid_topk"):
+            rs = sorted((r for r in rows if r["method"] == mt), key=lambda r: int(r["n"]))
+            if not rs:
+                continue
+            st = STYLE[mt]
+            label = st["label"].replace("stopped at k", f"stopped at k={k}")
+            done = [r for r in rs if r["finished"] == "True"]
+            x = [int(r["n"]) for r in done]
+            y = [float(r["seconds"] if col == 0 else r["range_queries"]) for r in done]
+            ax.plot(x, y, color=st["color"], marker=st["marker"], ls=st["ls"],
+                    label=label, lw=2, ms=7)
+            for r in rs:
+                if r["finished"] != "True":            # did not finish
+                    yv = float(r["seconds"] if col == 0 else r["range_queries"])
+                    ax.plot(int(r["n"]), yv, color=st["color"], marker="x", ms=10, mew=2)
+                    ax.annotate("DNF", (int(r["n"]), yv), textcoords="offset points",
+                                xytext=(6, 4), color=st["color"], fontsize=9)
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        ax.set_xticks(all_n)
+        ax.set_xticklabels([_fmt_n(v) for v in all_n])
+        ax.xaxis.set_minor_locator(matplotlib.ticker.NullLocator())
+        ax.set_xlabel("Number of points (n)")
+        ax.set_ylabel("Runtime (seconds)" if col == 0 else "Range queries issued")
+        ax.set_title(title)
+        ax.grid(True, which="major", alpha=0.3)
+        ax.legend(fontsize=8)
+    fig.suptitle("Scaling, World-POI")
+    fig.tight_layout()
+    _save(fig, out, "fig5_scaling")
+    plt.close(fig)
+
+
+def _plot_fig6(out):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    rows = _read(out / "fig6_topk_quality.csv")
+    n = max(int(r["n"]) for r in rows)
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    for mt in ("vanilla_full_largest", "vanilla_topk", "maxrs_topk", "grid_topk"):
+        rs = sorted((r for r in rows if r["method"] == mt and int(r["n"]) == n),
+                    key=lambda r: int(r["k"]))
+        if not rs:
+            continue
+        st = STYLE[mt]
+        ax.plot([int(r["k"]) for r in rs], [int(r["points_in_top_k"]) for r in rs],
+                color=st["color"], marker=st["marker"], ls=st["ls"], label=st["label"],
+                lw=2, ms=6)
+    ax.set_xlabel("k (number of clusters)")
+    ax.set_ylabel("Total points in the first k clusters")
+    ax.set_title(f"Top-k quality, World-POI ({_fmt_n(n)} points)")
+    ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    _save(fig, out, "fig6_topk_quality")
+    plt.close(fig)
+
+
+def _plot_fig7(out):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    z = np.load(out / "fig7_data.npz")
+    k, n = int(z["k"]), int(z["n"])
+    colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b"]
+    methods = [("vanilla_topk", f"Vanilla DBSCAN + index (stopped at k={k})"),
+               ("grid_topk", f"Grid-DBSCAN (k={k})")]
+    fig = plt.figure(figsize=(4.2 + 2.6 * k, 7.5))
+    gs = fig.add_gridspec(2, 1 + k, width_ratios=[3.2] + [1] * k, wspace=0.25, hspace=0.35)
+    for row, (mt, title) in enumerate(methods):
+        ax = fig.add_subplot(gs[row, 0])
+        ax.scatter(z["bg_lon"], z["bg_lat"], s=0.05, c="#bbbbbb", rasterized=True, lw=0)
+        sizes = []
+        for c in range(1, k + 1):
+            if f"{mt}_{c}_lat" not in z:
+                continue
+            clat, clon = z[f"{mt}_{c}_lat"], z[f"{mt}_{c}_lon"]
+            col = colors[(c - 1) % len(colors)]
+            sizes.append(len(clat))
+            ax.scatter(np.mean(clon), np.mean(clat), s=220, facecolors="none",
+                       edgecolors=col, lw=2, zorder=3)
+            ax.annotate(str(c), (np.mean(clon), np.mean(clat)), xytext=(7, 7),
+                        textcoords="offset points", color=col, fontweight="bold")
+            zax = fig.add_subplot(gs[row, c])
+            zax.scatter(z[f"{mt}_{c}_near_lon"], z[f"{mt}_{c}_near_lat"], s=1,
+                        c="#cccccc", rasterized=True, lw=0)
+            zax.scatter(clon, clat, s=3, c=col, rasterized=True, lw=0)
+            zax.set_aspect(1 / np.cos(np.radians(np.mean(clat))))
+            zax.set_title(f"#{c}: {len(clat):,} pts\n({np.mean(clat):.3f}, "
+                          f"{np.mean(clon):.3f})", fontsize=8)
+            zax.tick_params(labelsize=6)
+            zax.ticklabel_format(useOffset=False, style="plain")
+        ax.set_xlim(-180, 180)
+        ax.set_ylim(-60, 80)
+        ax.set_aspect("equal")
+        ax.set_title(f"{title}\nsizes {sizes}", fontsize=10)
+        ax.set_xlabel("longitude")
+        ax.set_ylabel("latitude")
+    fig.suptitle(f"Top-{k} clusters, World-POI ({_fmt_n(n)} points, eps = {float(z['eps']):g} km, "
+                 f"minPts = {int(z['minPts'])}); grey = all points (sample on the world maps)",
+                 fontsize=10)
+    _save(fig, out, "fig7_topk_map")
+    plt.close(fig)
+
+
+def _write_table(out):
+    rows = _read(out / "table_indexes.csv")
+    kinds = list(dict.fromkeys(r["index"] for r in rows))
+    ns = sorted({int(r["n"]) for r in rows})
+    get = {(r["index"], int(r["n"])): r for r in rows}
+
+    def block(field, fmt):
+        best = {n: min((float(get[(kd, n)][field]) for kd in kinds if (kd, n) in get),
+                       default=None) for n in ns}
+        md = ["| Index | " + " | ".join(_fmt_n(n) for n in ns) + " |",
+              "|---|" + "---:|" * len(ns)]
+        tex = []
+        for kd in kinds:
+            cells_md, cells_tex = [], []
+            for n in ns:
+                if (kd, n) not in get:
+                    cells_md.append("–"); cells_tex.append("--")
+                    continue
+                v = float(get[(kd, n)][field])
+                s = fmt(v)
+                is_best = best[n] is not None and v == best[n]
+                cells_md.append(f"**{s}**" if is_best else s)
+                cells_tex.append(f"\\textbf{{{s}}}" if is_best else s)
+            md.append(f"| {kd} | " + " | ".join(cells_md) + " |")
+            tex.append(kd.replace("_", "\\_") + " & " + " & ".join(cells_tex) + r" \\")
+        head = ("Index & " + " & ".join(_fmt_n(n) for n in ns) + r" \\ \hline")
+        return md, [r"\begin{tabular}{l" + "r" * len(ns) + "}", head] + tex + [r"\end{tabular}"]
+
+    t = lambda v: f"{v:.3f}" if v < 10 else f"{v:.1f}"
+    md1, tex1 = block("grid_topk_seconds", t)
+    md2, tex2 = block("build_seconds", t)
+    md3, tex3 = block("box_query_us", lambda v: f"{v:.1f}")
+    text = ["# Grid-DBSCAN top-k runtime (s) per Indexicon index", "", *md1, "",
+            "# Index-only: microseconds per eps box query", "", *md3, "",
+            "# Index build time (s)", "", *md2, "", "Fastest per column in bold."]
+    (out / "table_indexes.md").write_text("\n".join(text) + "\n")
+    (out / "table_indexes.tex").write_text(
+        "% Grid-DBSCAN top-k runtime (s)\n" + "\n".join(tex1) +
+        "\n\n% microseconds per eps box query\n" + "\n".join(tex3) +
+        "\n\n% index build time (s)\n" + "\n".join(tex2) + "\n")
 
 
 if __name__ == "__main__":
